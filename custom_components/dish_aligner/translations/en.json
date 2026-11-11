@@ -12,7 +12,7 @@
       "packages": {
         "title": "Radio dependencies",
         "description": "Dish Aligner needs these on the radio:\n\n{status}\n\n**Missing:** {missing}\n\nInstall on the radio (SSH or Luci → System → Software):\n- `iwinfo` → `apk add iwinfo` (signal + survey scans)\n- `iw` → `apk add iw` (hidden-SSID probes)\n- `rpcd ACL` → copy `openwrt/homeassistant.json` from this repo to `/usr/share/rpcd/acl.d/` then `service rpcd reload`\n\nUse **Re-check** after installing.",
-        "menu_option": {
+        "menu_options": {
           "continue_setup": "Next",
           "recheck": "Re-check",
           "skip_packages": "Continue anyway (features may fail)"
