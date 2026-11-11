@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/GraphicHealer/dish-aligner/a0f2214/custom_components/dish_aligner/brand/logo.png" alt="Dish Aligner logo" width="384">
+  <img src="https://raw.githubusercontent.com/GraphicHealer/dish-aligner/655aad2/custom_components/dish_aligner/brand/logo.png" alt="Dish Aligner logo" width="384">
 </p>
 <h1 align="center">Dish Aligner</h1>
 <p align="center">
