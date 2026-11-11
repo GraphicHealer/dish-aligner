@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dish Aligner setup",
+        "description": "Pick the two devices that make up the dish. **Rotator**: the ESPHome device driving the stepper. **Radio**: the OpenWrt device (NanoBeam) mounted on it.",
+        "data": {
+          "dish_device": "Rotator device (ESPHome)",
+          "radio_device": "Radio device (OpenWrt)"
+        }
+      },
+      "packages": {
+        "title": "Radio dependencies",
+        "description": "Dish Aligner needs these on the radio:\n\n{status}\n\n**Missing:** {missing}\n\nInstall on the radio (SSH or Luci → System → Software):\n- `iwinfo` → `apk add iwinfo` (signal + survey scans)\n- `iw` → `apk add iw` (hidden-SSID probes)\n- `rpcd ACL` → copy `openwrt/homeassistant.json` from this repo to `/usr/share/rpcd/acl.d/` then `service rpcd reload`\n\nUse **Re-check** after installing.",
+        "menu_option": {
+          "continue_setup": "Next",
+          "recheck": "Re-check",
+          "skip_packages": "Continue anyway (features may fail)"
+        }
+      },
+      "radio": {
+        "title": "Wireless interface",
+        "description": "The radio reports {iface_count} wireless interface(s). Pick the one the dish uses for its uplink - that's the interface surveys will scan on.",
+        "data": {
+          "wifi_interface": "Wireless interface"
+        }
+      },
+      "verify": {
+        "title": "Verification",
+        "description": "Entities were resolved automatically.\n\nSignal sensor `{signal_entity}` currently reads **{signal_state}**. If that is 0 or unavailable, iwinfo or the rpcd ACL is missing on the radio - fix that, then retry.\n\nEntities enabled on the radio for you: {enabled_entities}"
+      }
+    },
+    "abort": {
+      "missing_openwrt": "The OpenWrt integration (FaserF/ha-openwrt) isn't installed or isn't loaded. Set it up for your radio first.",
+      "missing_esphome": "No loaded ESPHome device was found. Flash the rotator firmware and adopt it first.",
+      "missing_entities": "One or more required entities couldn't be found on the chosen devices. Check the rotator is running the dish-aligner firmware (azimuth_target number, azimuth_moving sensor) and the radio exposes signal sensors."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dish Aligner options",
+        "data": {
+          "wifi_interface": "Wireless interface to scan (e.g. phy0-sta0)",
+          "sweep_degrees": "Auto-align sweep width",
+          "step_degrees": "Auto-align step size",
+          "dwell_seconds": "Dwell time per stop",
+          "survey_step_degrees": "Survey step size",
+          "auto_home": "Re-home before every survey",
+          "verify_speedtest": "Speed-test button run after auto-align"
+        }
+      }
+    }
+  }
+}

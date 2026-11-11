@@ -1,0 +1,49 @@
+{
+    "homeassistant": {
+        "description": "Home Assistant integration access",
+        "read": {
+            "ubus": {
+                "session": [ "access", "login", "list", "destroy" ],
+                "system": [ "board", "info" ],
+                "network.device": [ "status" ],
+                "network.interface": [ "dump", "status" ],
+                "network.wireless": [ "status" ],
+                "iwinfo": [ "devices", "info", "assoclist", "scan", "freqlist", "txpowerlist", "countrylist" ],
+                "hostapd.*": [ "get_clients", "wps_status" ],
+                "file": [ "read", "stat", "list", "exec" ],
+                "dhcp": [ "ipv4leases", "ipv6leases" ],
+                "rc": [ "list", "init" ],
+                "log": [ "read" ],
+                "service": [ "list" ],
+                "luci-rpc": [ "getBoardJSON", "getHostHints", "getNetworkDevices", "getDHCPLeases", "getWirelessDevices" ],
+                "uci": [ "get", "state", "changes" ]
+            },
+            "file": {
+                "/": [ "list" ],
+                "/*": [ "list", "read" ],
+                "/proc/*": [ "read" ],
+                "/sys/*": [ "read" ],
+                "/bin/*": [ "exec" ],
+                "/sbin/*": [ "exec" ],
+                "/usr/bin/*": [ "exec" ],
+                "/usr/sbin/*": [ "exec" ]
+            },
+            "uci": [ "*" ]
+        },
+        "write": {
+            "ubus": {
+                "system": [ "reboot" ],
+                "network.interface": [ "up", "down" ],
+                "hostapd.*": [ "*" ],
+                "file": [ "exec", "write", "remove" ],
+                "rc": [ "init" ],
+                "uci": [ "set", "add", "delete", "commit", "apply", "confirm" ]
+            },
+            "file": {
+                "/etc/init.d/*": [ "exec" ],
+                "/tmp/*": [ "write", "exec", "remove" ]
+            },
+            "uci": [ "*" ]
+        }
+    }
+}

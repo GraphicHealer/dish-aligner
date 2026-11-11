@@ -1,0 +1,248 @@
+# Dish Azimuth rotator - ESPHome config for the dish-aligner integration.
+#
+# Hardware this was written for:
+#   ESP32 (LOLIN S2 Mini) + A4988 stepper driver turning the azimuth axis of a
+#   gutted Winegard Dish Playmaker dome. 4 steps per degree, mechanical
+#   separator prevents crossing the 359/0 notch.
+#
+# Values marked # CHANGE are per-install; everything else should port as-is.
+
+esphome:
+  name: dish-azimuth            # entity ids come out as *.dish_azimuth_*
+  friendly_name: Dish Azimuth
+  on_boot:
+    priority: -100
+    then:
+      - stepper.report_position:
+          id: azimuth
+          position: !lambda "return (id(saved_position) * 4);"
+      - script.execute:
+            id: stepper_set
+            degree: !lambda 'return id(saved_position);'
+
+esp32:
+  board: lolin_s2_mini        # CHANGE if you use a different ESP32
+  framework:
+    type: arduino
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  password: !secret ota_password
+  platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: on
+  domain: .lan
+
+  # Optional - recommended so the dashboard/integration never loses it
+  manual_ip:
+    static_ip: 192.168.1.50   # CHANGE
+    gateway: 192.168.1.1      # CHANGE
+    subnet: 255.255.255.0
+
+  ap:
+    ssid: AP_Dish-Azimuth
+
+captive_portal:
+
+globals:
+  - id: saved_position
+    type: int
+    initial_value: '0'
+    restore_value: true
+  # Offset between the stepper's zero notch and your displayed azimuth.
+  # Calibrate: home the dish, note where it physically points, set this so
+  # "Current Angle" reads the correct compass/rig-relative bearing. # CHANGE
+  - id: offset
+    type: int
+    initial_value: '90'
+
+stepper:
+  - platform: a4988
+    id: azimuth
+    dir_pin: GPIO8            # CHANGE for your wiring
+    step_pin: GPIO4           # CHANGE
+    max_speed: 500 steps/s    # 4 steps/deg -> ~125 deg/s
+    sleep_pin: GPIO2          # CHANGE
+    acceleration: 200
+    deceleration: 200
+
+number:
+  # Absolute aim target in DISPLAYED azimuth (0-359, same convention as the
+  # "Current Angle" sensor). Drag-to-aim and the dish-aligner integration both
+  # drive the dish through this. Converts displayed -> raw by subtracting the
+  # offset, then routes through stepper_set so the path can never cross the
+  # mechanical separator between positions 359 and 0.
+  - platform: template
+    name: Azimuth Target
+    id: azimuth_target
+    min_value: 0
+    max_value: 359
+    step: 1
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    set_action:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (((int)x - id(offset)) + 360) % 360;'
+
+binary_sensor:
+  # True while the stepper is still travelling to its target. The dish-aligner
+  # integration waits for this to clear before taking signal readings or
+  # running an iwinfo scan at each scan stop.
+  - platform: template
+    name: "Azimuth Moving"
+    device_class: moving
+    lambda: 'return (id(azimuth).current_position != id(azimuth).target_position);'
+
+button:
+  # Sensorless homing: creeps ~10 deg past the zero notch at low speed until
+  # the separator physically stalls the motor, then re-zeroes the count and
+  # returns to where it was. Required periodically because position is an
+  # open-loop step count with no encoder feedback.
+  - platform: template
+    name: Home Azimuth
+    on_press:
+      then:
+        - script.execute:
+            id: home_azimuth
+            saved_pos: !lambda 'return id(saved_position);'
+  - platform: template
+    name: +1°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) + 1);'
+  - platform: template
+    name: -1°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) - 1);'
+  - platform: template
+    name: +5°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) + 5);'
+  - platform: template
+    name: -5°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) - 5);'
+  - platform: template
+    name: +15°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) + 15);'
+  - platform: template
+    name: -15°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) - 15);'
+  - platform: template
+    name: +45°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) + 45);'
+  - platform: template
+    name: -45°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) - 45);'
+  - platform: template
+    name: +90°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) + 90);'
+  - platform: template
+    name: -90°
+    on_press:
+      then:
+        - script.execute:
+            id: stepper_set
+            degree: !lambda 'return (id(saved_position) - 90);'
+
+sensor:
+  # Live displayed azimuth (raw position + offset, wrapped to 0-359). Tracks
+  # actual stepper position so the dial moves in real time during sweeps.
+  # delta filter keeps it quiet at rest, heartbeat keeps history fed.
+  - platform: template
+    id: azimuth_pos
+    name: "Current Angle"
+    update_interval: 250ms
+    lambda: 'return ((((int)(id(azimuth).current_position) / 4) + id(offset)) % 360 + 360) % 360;'
+    filters:
+      - or:
+          - delta: 0.5
+          - heartbeat: 60s
+
+script:
+  # All movement funnels through here. Normalizes every target into 0-359 raw
+  # steps (x4) so a command can never cross the mechanical separator - the
+  # stepper always takes the legal route around.
+  - id: stepper_set
+    parameters:
+      degree: int
+    then:
+      - globals.set:
+          id: saved_position
+          value: !lambda 'if (degree > 359) { return (degree - 360); } else if (degree < 0) { return (degree + 360); } else { return degree; }'
+      - stepper.set_target:
+          id: azimuth
+          target: !lambda 'return (id(saved_position) * 4);'
+  # Sensorless homing via stall detection. The separator sits ~4 steps below
+  # position 0; driving toward -40 steps guarantees contact from any starting
+  # point without ever commanding a path through open air past the stop.
+  - id: home_azimuth
+    parameters:
+      saved_pos: int
+    then:
+      # Drop speed so the stall is gentle on the motor and gearbox
+      - stepper.set_speed:
+          id: azimuth
+          speed: 150 steps/s
+      # Drive 10 deg past the zero notch; the separator stops it short
+      - stepper.set_target:
+          id: azimuth
+          target: -40
+      # Worst case: full 360 + 10 deg = 1476 steps at 150 steps/s ~= 10s
+      - delay: 12s
+      # Wherever it stopped IS mechanical zero - snap the count to it
+      - stepper.report_position:
+          id: azimuth
+          position: 0
+      - globals.set:
+          id: saved_position
+          value: '0'
+      - stepper.set_speed:
+          id: azimuth
+          speed: 500 steps/s
+      # Return to the commanded position, now on a verified count
+      - script.execute:
+          id: stepper_set
+          degree: !lambda 'return saved_pos;'

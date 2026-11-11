@@ -1,0 +1,92 @@
+# Draft service definitions - not yet registered
+aim:
+  name: Aim
+  description: Rotate the dish to an absolute azimuth (0-359, displayed convention).
+  fields:
+    azimuth:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 359
+          unit_of_measurement: "°"
+
+auto_align:
+  name: Auto Align
+  description: >-
+    Sweep an arc around the current heading, sample signal dBm at each stop,
+    then park on the peak and verify with a throughput test.
+  fields:
+    sweep_degrees:
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 90
+          unit_of_measurement: "°"
+    step_degrees:
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 15
+          unit_of_measurement: "°"
+    dwell_seconds:
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: s
+
+survey:
+  name: Wi-Fi Survey
+  description: >-
+    Rotate through the configured range, run an iwinfo scan at each stop, and
+    build a list of visible APs deduplicated per BSSID at its strongest angle.
+  fields:
+    step_degrees:
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 45
+          unit_of_measurement: "°"
+    dwell_seconds:
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: s
+
+join:
+  name: Join Wi-Fi
+  description: >-
+    Aim the dish at the AP's best survey angle, then rewrite the STA
+    interface on the OpenWrt radio (ssid/encryption/key via UCI) and bounce
+    wwan so it connects as a client.
+  fields:
+    ssid:
+      required: true
+      selector:
+        text:
+    password:
+      selector:
+        text:
+    encryption:
+      description: OpenWrt wireless.encryption override (psk2/sae-mixed/none). Inferred from the survey when omitted.
+      selector:
+        text:
+    bssid:
+      description: Pin the association to this AP (from the survey) instead of any AP carrying the SSID.
+      selector:
+        text:
+
+home:
+  name: Re-home
+  description: Re-calibrate azimuth by stalling gently against the mechanical separator.
+
+abort:
+  name: Abort
+  description: Stop any in-progress aim, auto-align, or survey operation.
