@@ -1,8 +1,19 @@
-# Dish Aligner
-
-Custom Home Assistant integration + bundled Lovelace card for aiming a
-motorized directional Wi-Fi dish, auto-aligning on peak signal, and surveying
-visible access points by azimuth.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/GraphicHealer/dish-aligner/master/custom_components/dish_aligner/brand/logo.png" alt="Dish Aligner logo" width="384">
+</p>
+<h1 align="center">Dish Aligner</h1>
+<p align="center">
+  Custom Home Assistant integration + bundled Lovelace card for aiming a
+  motorized directional Wi-Fi dish, auto-aligning on peak signal, and surveying
+  visible access points by azimuth.
+</p>
+<p align="center">
+  <a href="AI-DECLARATION.md"><img src="https://img.shields.io/badge/AI--DECLARATION-pair-blue" alt="AI-DECLARATION: pair"></a>
+</p>
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=GraphicHealer&repository=dish-aligner&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open in HACS"></a>
+  <a href="https://github.com/GraphicHealer/dish-aligner/actions/workflows/validate.yml"><img src="https://github.com/GraphicHealer/dish-aligner/actions/workflows/validate.yml/badge.svg" alt="Validate"></a>
+</p>
 
 ## Hardware
 
