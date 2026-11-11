@@ -26,7 +26,8 @@ _LOGGER = logging.getLogger(__name__)
 
 NULL_TOKEN = "00000000000000000000000000000000"
 TIMEOUT = aiohttp.ClientTimeout(total=15)
-IW_PATHS = ("/usr/sbin/iw", "/sbin/iw")
+IW_PATHS = ("/usr/sbin/iw", "/sbin/iw", "/usr/bin/iw", "/bin/iw")
+APK_PATHS = ("/sbin/apk", "/usr/sbin/apk", "/bin/apk")
 PROBE_SETTLE = 3.0  # s to let probe responses come back before dumping
 
 
@@ -124,23 +125,43 @@ class UbusClient:
         data = await self.call("iwinfo", "devices", {})
         return data.get("devices", []) or []
 
+    async def _apk_installed(self, pkg: str) -> bool | None:
+        """`apk info -e <pkg>` exit status - None if apk itself can't run."""
+        for path in APK_PATHS:
+            try:
+                data = await self.call(
+                    "file", "exec", {"path": path, "params": ["info", "-e", pkg]}
+                )
+            except UbusError:
+                continue
+            try:
+                return int(data.get("code", 0)) == 0
+            except (TypeError, ValueError):
+                return bool((data.get("stdout") or "").strip())
+        return None
+
     async def package_status(self) -> dict[str, bool]:
         """Check the radio-side dependencies dish_aligner needs."""
         status: dict[str, bool] = {}
 
-        # iwinfo: the call itself is the test - needs the package AND the ACL
-        try:
-            await self.iwinfo_devices()
-            status["iwinfo"] = True
-        except UbusError:
-            status["iwinfo"] = False
+        installed = await self._apk_installed("iwinfo")
+        if installed is None:
+            # No apk (older opkg systems) - the call itself is the test
+            try:
+                await self.iwinfo_devices()
+                installed = True
+            except UbusError:
+                installed = False
+        status["iwinfo"] = installed
 
-        # iw: file.exec only succeeds if the binary exists
-        try:
-            await self._exec(["version"])
-            status["iw"] = True
-        except UbusError:
-            status["iw"] = False
+        installed = await self._apk_installed("iw")
+        if installed is None:
+            try:
+                await self._exec(["version"])
+                installed = True
+            except UbusError:
+                installed = False
+        status["iw"] = installed
 
         # our rpcd ACL file (grants iwinfo/file/exec to the ubus session)
         try:
