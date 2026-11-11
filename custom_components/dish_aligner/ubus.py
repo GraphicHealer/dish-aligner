@@ -251,7 +251,11 @@ def ubus_client_from_device(hass: HomeAssistant, device_id: str) -> UbusClient:
     dev = dr.async_get(hass).async_get(device_id)
     if dev is None:
         raise HomeAssistantError("Radio device not found in registry")
-    for entry_id in dev.config_entries:
+    # config_entry_id on newer cores; config_entries is deprecated there
+    # but still the only source on older ones.
+    entry_id = getattr(dev, "config_entry_id", None)
+    entry_ids = [entry_id] if entry_id else list(getattr(dev, "config_entries", []))
+    for entry_id in entry_ids:
         entry = hass.config_entries.async_get_entry(entry_id)
         if entry and entry.domain == OPENWRT_DOMAIN:
             d = entry.data
