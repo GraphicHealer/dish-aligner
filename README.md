@@ -9,10 +9,10 @@
 </p>
 <p align="center">
   <a href="AI-DECLARATION.md"><img src="https://img.shields.io/badge/AI--DECLARATION-pair-blue" alt="AI-DECLARATION: pair"></a>
+  <a href="https://github.com/GraphicHealer/dish-aligner/actions/workflows/validate.yml"><img src="https://github.com/GraphicHealer/dish-aligner/actions/workflows/validate.yml/badge.svg" alt="Validate"></a>
 </p>
 <p align="center">
   <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=GraphicHealer&repository=dish-aligner&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open in HACS"></a>
-  <a href="https://github.com/GraphicHealer/dish-aligner/actions/workflows/validate.yml"><img src="https://github.com/GraphicHealer/dish-aligner/actions/workflows/validate.yml/badge.svg" alt="Validate"></a>
 </p>
 
 ## Hardware
