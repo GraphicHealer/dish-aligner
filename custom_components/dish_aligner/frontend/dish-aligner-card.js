@@ -143,14 +143,14 @@ class DishAlignerCard extends HTMLElement {
     return 38 + t * 100;
   }
 
-  // Heat colors: strong green -> weak red, alpha squared so the fan only
-  // really shows near the AP's peak (dB is already a log scale, so a
-  // quadratic alpha concentrates the visible area instead of painting
-  // a broad wash across every bearing the AP was barely audible on).
-  _heatColor(dbm) {
+  // Heat colors: green at the AP's own peak -> red ~35dB down, so the
+  // gradient is always visible even when every sample is "strong" in
+  // absolute terms. Alpha stays absolute and quadratic so the fan only
+  // really shows near the peak bearing and weak APs render fainter.
+  _heatColor(dbm, hi) {
     const t = Math.min(1, Math.max(0, (dbm + 95) / 55)); // -95..-40 -> 0..1
-    const hue = t * 120;
-    return `hsla(${hue},80%,45%,${(0.45 * t * t).toFixed(3)})`;
+    const c = Math.min(1, Math.max(0, (dbm - (hi - 35)) / 35));
+    return `hsla(${c * 120},80%,45%,${(0.45 * t * t).toFixed(3)})`;
   }
 
   // Annular-sector heat fan between the AP's measured sample bearings:
@@ -174,6 +174,7 @@ class DishAlignerCard extends HTMLElement {
       [s[s.length - 1][0] + gap, -95],
     ];
     const Rin = 42, Rout = 138;
+    const hi = Math.max(...s.map((p) => p[1]));
     let out = "";
     for (let i = 0; i < pts.length - 1; i++) {
       const [a0, d0] = pts[i], [a1, d1] = pts[i + 1];
@@ -186,7 +187,7 @@ class DishAlignerCard extends HTMLElement {
         const [x2, y2] = this._pt(CX, CY, Rout, b1);
         const [x3, y3] = this._pt(CX, CY, Rin, b1);
         const [x4, y4] = this._pt(CX, CY, Rin, b0);
-        out += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${Rout} ${Rout} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${Rin} ${Rin} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${this._heatColor(dbm)}"/>`;
+        out += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${Rout} ${Rout} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${Rin} ${Rin} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${this._heatColor(dbm, hi)}"/>`;
       }
     }
     const [lx, ly] = this._pt(CX, CY, R - 4, pk);
