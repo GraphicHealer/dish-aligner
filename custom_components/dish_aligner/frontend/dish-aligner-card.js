@@ -169,9 +169,9 @@ class DishAlignerCard extends HTMLElement {
     const ssid = this.shadowRoot.getElementById("mssid")?.value.trim();
     const password = this.shadowRoot.getElementById("mpass")?.value ?? "";
     if (!ssid) return;
-    // Keep what was typed - a failed attempt reopens this row with it intact
+    // Keep the SSID so a failed attempt doesn't make them retype it;
+    // the password is deliberately not retained
     this._mssid = ssid;
-    this._mpass = password;
     if (window.confirm(`Repoint the uplink to "${ssid}" at the current heading?`)) {
       this._pendingJoin = { ssid };
       this._svc("join", { ssid, password });
@@ -480,7 +480,7 @@ class DishAlignerCard extends HTMLElement {
           ${rows}
           <tr id="manual-row" style="display:${this._manualOpen ? "table-row" : "none"}">
             <td><input id="mssid" placeholder="SSID" style="width:100%" value="${(this._mssid ?? "").replace(/"/g, "&quot;")}"/></td>
-            <td colspan="3"><input id="mpass" type="password" placeholder="Password" style="width:100%" value="${(this._mpass ?? "").replace(/"/g, "&quot;")}"/></td>
+            <td colspan="3"><input id="mpass" type="password" placeholder="Password" style="width:100%"/></td>
             <td><button id="mconnect" class="join">Connect</button></td>
           </tr>
           <tr>
