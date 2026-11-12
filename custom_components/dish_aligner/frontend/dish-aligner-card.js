@@ -408,28 +408,32 @@ class DishAlignerCard extends HTMLElement {
 
   // Auto-guess entities by name so a fresh card mostly self-configures.
   static getStubConfig(hass) {
-    const pick = (domain, needle) =>
-      Object.keys(hass?.states ?? {}).find(
-        (e) => e.startsWith(domain + ".") && e.includes(needle)
-      );
+    const pick = (domain, needle, platform) =>
+      Object.values(hass?.entities ?? {}).find(
+        (e) =>
+          e.entity_id.startsWith(domain + ".") &&
+          e.entity_id.includes(needle) &&
+          (!platform || e.platform === platform)
+      )?.entity_id;
     const cfg = {
-      angle_entity: pick("sensor", "current_angle"),
-      target_entity: pick("number", "azimuth_target"),
-      status_entity: pick("sensor", "aligner_status"),
-      survey_entity: pick("sensor", "aligner_survey"),
-      signal_entity: pick("sensor", "signal"),
+      angle_entity: pick("sensor", "current_angle", "esphome"),
+      target_entity: pick("number", "azimuth_target", "esphome"),
+      status_entity: pick("sensor", "aligner_status", "dish_aligner"),
+      survey_entity: pick("sensor", "aligner_survey", "dish_aligner"),
+      signal_entity: pick("sensor", "signal", "openwrt"),
       beamwidth: 50,
     };
     return Object.fromEntries(Object.entries(cfg).filter(([, v]) => v !== undefined));
   }
 }
 
+// platform = integration domain the entity must come from
 const EDITOR_FIELDS = [
-  { key: "angle_entity", label: "Azimuth sensor", domains: ["sensor"] },
-  { key: "target_entity", label: "Aim target (number)", domains: ["number"] },
-  { key: "status_entity", label: "Dish Aligner status", domains: ["sensor"] },
-  { key: "survey_entity", label: "Dish Aligner survey", domains: ["sensor"] },
-  { key: "signal_entity", label: "Signal strength (optional)", domains: ["sensor"] },
+  { key: "angle_entity", label: "Azimuth sensor", domains: ["sensor"], platform: "esphome" },
+  { key: "target_entity", label: "Aim target (number)", domains: ["number"], platform: "esphome" },
+  { key: "status_entity", label: "Dish Aligner status", domains: ["sensor"], platform: "dish_aligner" },
+  { key: "survey_entity", label: "Dish Aligner survey", domains: ["sensor"], platform: "dish_aligner" },
+  { key: "signal_entity", label: "Signal strength (optional)", domains: ["sensor"], platform: "openwrt" },
 ];
 
 class DishAlignerCardEditor extends HTMLElement {
@@ -443,8 +447,24 @@ class DishAlignerCardEditor extends HTMLElement {
     if (this.shadowRoot) {
       this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((el) => {
         el.hass = hass;
+        const f = EDITOR_FIELDS.find((x) => x.key === el.dataset.key);
+        if (f) el.includeEntities = this._entitiesFor(f);
       });
     }
+  }
+
+  // entity_ids of `domains` owned by integration `platform` (registry `platform` key)
+  _entitiesFor(f) {
+    const ids = Object.values(this._hass?.entities ?? {})
+      .filter(
+        (e) =>
+          f.domains.some((d) => e.entity_id.startsWith(d + ".")) &&
+          (!f.platform || e.platform === f.platform)
+      )
+      .map((e) => e.entity_id)
+      .sort();
+    // empty list would hide EVERYTHING - fall back to domain-only filtering
+    return ids.length ? ids : undefined;
   }
 
   _render() {
@@ -468,6 +488,8 @@ class DishAlignerCardEditor extends HTMLElement {
       </div>`;
     this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((el) => {
       el.hass = this._hass;
+      const f = EDITOR_FIELDS.find((x) => x.key === el.dataset.key);
+      if (f) el.includeEntities = this._entitiesFor(f);
       el.value = this._config?.[el.dataset.key] ?? "";
       el.addEventListener("value-changed", (ev) => this._changed(el.dataset.key, ev.detail.value));
     });
