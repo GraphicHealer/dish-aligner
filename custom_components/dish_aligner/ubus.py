@@ -157,7 +157,8 @@ class UbusClient:
         path = ""
         try:
             data = await self._file_exec(
-                "/bin/sh", ["-c", "command -v librespeed-cli"]
+                "/bin/sh",
+                ["-c", "command -v librespeed-cli || command -v librespeed-cli-rust"],
             )
             path = (data.get("stdout") or "").strip().splitlines()[0].strip()
         except (UbusError, IndexError):
@@ -278,7 +279,8 @@ class UbusClient:
         # the post-align speed test when installed (pkg or static binary)
         try:
             data = await self._file_exec(
-                "/bin/sh", ["-c", "command -v librespeed-cli"]
+                "/bin/sh",
+                ["-c", "command -v librespeed-cli || command -v librespeed-cli-rust"],
             )
             status["librespeed-cli (optional)"] = bool(
                 (data.get("stdout") or "").strip()

@@ -11,7 +11,7 @@
       },
       "packages": {
         "title": "Radio dependencies",
-        "description": "Dish Aligner needs these on the radio:\n\n{status}\n\n**Missing:** {missing}\n\nInstall on the radio (SSH or Luci → System → Software):\n- `iwinfo` → `apk add iwinfo` (signal + survey scans)\n- `iw` → `apk add iw` (hidden-SSID probes)\n- `rpcd ACL` → copy `openwrt/homeassistant.json` from this repo to `/usr/share/rpcd/acl.d/` then `service rpcd reload`\n\n`librespeed-cli` is optional: `apk add librespeed-go` (or a static binary on PATH) gives the post-align test full ping/jitter/upload results - without it, a simple download test is used.\n\nUse **Re-check** after installing.",
+        "description": "Dish Aligner needs these on the radio:\n\n{status}\n\n**Missing:** {missing}\n\nInstall on the radio (SSH or Luci → System → Software):\n- `iwinfo` → `apk add iwinfo` (signal + survey scans)\n- `iw` → `apk add iw` (hidden-SSID probes)\n- `rpcd ACL` → copy `openwrt/homeassistant.json` from this repo to `/usr/share/rpcd/acl.d/` then `service rpcd reload`\n\n`librespeed-cli` is optional: `apk add librespeed-go` or `apk add librespeed-cli-rust` (or a static binary on PATH) gives the post-align test full ping/jitter/upload results - without it, a simple download test is used.\n\nUse **Re-check** after installing.",
         "menu_options": {
           "continue_setup": "Next",
           "recheck": "Re-check",
