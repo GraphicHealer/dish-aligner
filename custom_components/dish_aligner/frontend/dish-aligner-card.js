@@ -35,7 +35,14 @@ class DishAlignerCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._dragging) this._render(); // don't blow away the DOM mid-drag
+    // Don't blow away the DOM mid-drag or while a text field has focus -
+    // a state update arriving mid-keystroke would clear what they're typing
+    const editing = this.shadowRoot?.activeElement?.tagName === "INPUT";
+    if (this._dragging || editing) {
+      this._renderSkipped = true;
+      return;
+    }
+    this._render();
   }
 
   _st(eid) { return eid ? this._hass?.states[eid] : undefined; }
@@ -154,12 +161,14 @@ class DishAlignerCard extends HTMLElement {
     this._unpin();
     this._listOpen = true;
     this._joinOpen = ap.bssid;
+    this._jpass = null; // fresh field for this AP
     this._render();
   }
 
   _submitJoin(ap) {
     if (!ap) return;
     const password = this.shadowRoot.getElementById("jpass")?.value ?? "";
+    this._jpass = null;
     this._joinOpen = null;
     this._pendingJoin = { ssid: ap.ssid, bssid: ap.bssid };
     this._svc("join", { ssid: ap.ssid, bssid: ap.bssid, password });
@@ -172,6 +181,7 @@ class DishAlignerCard extends HTMLElement {
     // Keep the SSID so a failed attempt doesn't make them retype it;
     // the password is deliberately not retained
     this._mssid = ssid;
+    this._mpass = null;
     if (window.confirm(`Repoint the uplink to "${ssid}" at the current heading?`)) {
       this._pendingJoin = { ssid };
       this._svc("join", { ssid, password });
@@ -341,7 +351,7 @@ class DishAlignerCard extends HTMLElement {
         <td colspan="6">
           ${ap.crypto?.enabled === false
             ? `<span class="hint-inline">Open network - no password needed.</span>`
-            : `<input id="jpass" type="password" placeholder="Password for ${ap.ssid}"/>`}
+            : `<input id="jpass" type="password" placeholder="Password for ${ap.ssid}" value="${(this._jpass ?? "").replace(/"/g, "&quot;")}"/><button class="peek" data-for="jpass">Show</button>`}
           <button class="join" id="jgo">Connect</button>
           <button class="join jcancel" id="jcancel">Cancel</button>
         </td>
@@ -418,6 +428,8 @@ class DishAlignerCard extends HTMLElement {
         .join-row .hint-inline { font-size:12px; color:var(--secondary-text-color,#888); margin-right:8px; }
         .join-row button { margin-left:4px; }
         .join-row .jcancel { background:var(--secondary-text-color,#888); }
+        .peek { background:transparent; color:var(--secondary-text-color,#888);
+                padding:3px 6px; font-size:12px; }
         tr[data-bssid]:hover td { background:var(--secondary-background-color,rgba(128,128,128,.12)); }
         .lobe { fill:var(--primary-color); fill-opacity:.16;
                 stroke:var(--primary-color); stroke-width:1.2; stroke-opacity:.55; }
@@ -480,7 +492,7 @@ class DishAlignerCard extends HTMLElement {
           ${rows}
           <tr id="manual-row" style="display:${this._manualOpen ? "table-row" : "none"}">
             <td><input id="mssid" placeholder="SSID" style="width:100%" value="${(this._mssid ?? "").replace(/"/g, "&quot;")}"/></td>
-            <td colspan="3"><input id="mpass" type="password" placeholder="Password" style="width:100%"/></td>
+            <td colspan="3"><input id="mpass" type="password" placeholder="Password" style="width:68%" value="${(this._mpass ?? "").replace(/"/g, "&quot;")}"/><button class="peek" data-for="mpass">Show</button></td>
             <td><button id="mconnect" class="join">Connect</button></td>
           </tr>
           <tr>
@@ -561,12 +573,39 @@ class DishAlignerCard extends HTMLElement {
     );
     this.shadowRoot.getElementById("jcancel")?.addEventListener("click", () => {
       this._joinOpen = null;
+      this._jpass = null;
       this._render();
     });
     this.shadowRoot.getElementById("jpass")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") this.shadowRoot.getElementById("jgo")?.click();
     });
     this.shadowRoot.getElementById("jpass")?.focus();
+
+    // Keep typed values as drafts so a re-render can't lose them, and
+    // flush any update skipped while a field had focus once it blurs
+    for (const [id, key] of [["mssid", "_mssid"], ["mpass", "_mpass"], ["jpass", "_jpass"]]) {
+      this.shadowRoot.getElementById(id)?.addEventListener("input", (e) => {
+        this[key] = e.target.value;
+      });
+    }
+    this.shadowRoot.querySelectorAll("input").forEach((inp) =>
+      inp.addEventListener("focusout", () => {
+        if (this._renderSkipped) {
+          this._renderSkipped = false;
+          this._render();
+        }
+      })
+    );
+    this.shadowRoot.querySelectorAll(".peek").forEach((b) =>
+      b.addEventListener("click", () => {
+        const inp = this.shadowRoot.getElementById(b.dataset.for);
+        if (!inp) return;
+        const show = inp.type === "password";
+        inp.type = show ? "text" : "password";
+        b.textContent = show ? "Hide" : "Show";
+        inp.focus();
+      })
+    );
     this.shadowRoot.getElementById("manual")?.addEventListener("click", () => {
       this._manualOpen = !this._manualOpen;
       this._render();
