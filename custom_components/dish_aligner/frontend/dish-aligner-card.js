@@ -83,6 +83,8 @@ class DishAlignerCard extends HTMLElement {
       line.setAttribute("x2", x); line.setAttribute("y2", y);
     }
     if (ind) ind.setAttribute("transform", `rotate(${this._dragAngle} ${CX} ${CY})`);
+    const num = this.shadowRoot.querySelector(".drag-num");
+    if (num) num.textContent = `${Math.round(this._dragAngle)}°`;
   }
   _up(e) {
     if (!this._dragging) return;
@@ -342,6 +344,9 @@ class DishAlignerCard extends HTMLElement {
         .grid-ring { fill:none; stroke:var(--divider-color,#444); stroke-width:.7; stroke-dasharray:2 4; opacity:.6; }
         .grid-label { fill:var(--secondary-text-color,#888); font-size:8px; text-anchor:start; dominant-baseline:middle; }
         .dish { stroke-linecap:round; }
+        .drag-num { fill:var(--primary-text-color,#fff); font-size:20px;
+                    font-weight:600; text-anchor:middle;
+                    dominant-baseline:middle; pointer-events:none; }
         .ap { cursor:pointer; }
         .ap circle:not(.ap-halo) { stroke:rgba(0,0,0,.4); stroke-width:1; }
         .ap.connected circle:not(.ap-halo) { stroke:#fff; stroke-width:2; }
@@ -417,6 +422,7 @@ class DishAlignerCard extends HTMLElement {
             <circle cx="${CX}" cy="${CY - 10.5}" r="2.6" fill="var(--primary-text-color,#fff)"/>
           </g>
           ${markers}
+          <text class="drag-num" x="${CX}" y="${CY + 32}" opacity="${this._dragging ? 1 : 0}">${this._dragging ? `${Math.round(this._dragAngle)}°` : ""}</text>
         </svg>
         </div>
         <div class="status">
