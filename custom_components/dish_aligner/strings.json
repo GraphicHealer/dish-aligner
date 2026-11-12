@@ -48,6 +48,7 @@
           "survey_step_degrees": "Survey step size",
           "auto_home": "Re-home before every survey",
           "excluded_aps": "APs to hide (comma-separated SSIDs or BSSIDs)",
+          "builtin_speedtest": "Download test on the radio after auto-align (~15s, measures the dish's own uplink)",
           "verify_speedtest": "Speed-test button run after auto-align"
         }
       }

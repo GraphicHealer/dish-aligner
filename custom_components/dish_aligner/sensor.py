@@ -73,6 +73,8 @@ class DishStatusSensor(_DishBase):
                 attrs["connected_bssid"] = conn["bssid"]
         if self._controller.last_error:
             attrs["last_error"] = self._controller.last_error
+        if self._controller.alignment:
+            attrs["last_align"] = self._controller.alignment
         return attrs
 
 

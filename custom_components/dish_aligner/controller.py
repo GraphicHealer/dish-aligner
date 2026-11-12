@@ -20,6 +20,7 @@ from .const import (
     CONF_ANGLE_ENTITY,
     CONF_AUTO_HOME,
     CONF_BITRATE_ENTITY,
+    CONF_BUILTIN_SPEEDTEST,
     CONF_DISH_DEVICE,
     CONF_DWELL_SECONDS,
     CONF_EXCLUDED_APS,
@@ -36,6 +37,7 @@ from .const import (
     CONF_VERIFY_SPEEDTEST,
     CONF_WIFI_INTERFACE,
     DEFAULT_AUTO_HOME,
+    DEFAULT_BUILTIN_SPEEDTEST,
     DEFAULT_DWELL_SECONDS,
     DEFAULT_STEP_DEGREES,
     DEFAULT_SURVEY_STEP_DEGREES,
@@ -43,6 +45,8 @@ from .const import (
     DEFAULT_WIFI_INTERFACE,
     OPENWRT_DOMAIN,
     SIGNAL_SAMPLES,
+    SPEEDTEST_DURATION,
+    SPEEDTEST_URL,
 )
 from .ubus import UbusClient, UbusError
 
@@ -331,6 +335,20 @@ class DishController:
                 "dbm": best_dbm,
                 "verified": None,
             }
+            self._notify()
+            # Built-in verification: a timed download on the radio itself,
+            # measuring the actual dish uplink (not HA's path)
+            if self._opt(CONF_BUILTIN_SPEEDTEST, DEFAULT_BUILTIN_SPEEDTEST):
+                try:
+                    self.alignment["verified"] = await self.ubus.speedtest_down(
+                        SPEEDTEST_URL, SPEEDTEST_DURATION
+                    )
+                except UbusError as err:
+                    self.alignment["verified"] = {"error": str(err)}
+                    _LOGGER.warning("Built-in speed test failed: %s", err)
+                self._notify()
+            # External verification: press whatever speedtest entity the
+            # user configured (Speedtest.net, Cloudflare add-on, etc.)
             test = self._opt(CONF_VERIFY_SPEEDTEST, None)
             if test:
                 await self._press(test)

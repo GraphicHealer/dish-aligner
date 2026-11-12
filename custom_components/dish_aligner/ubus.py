@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from typing import Any
 
 import aiohttp
@@ -47,7 +48,7 @@ class UbusClient:
         self._lock = asyncio.Lock()
         self._rpc_id = 0
 
-    async def _post(self, params: list) -> Any:
+    async def _post(self, params: list, timeout: aiohttp.ClientTimeout = TIMEOUT) -> Any:
         self._rpc_id += 1
         payload = {
             "jsonrpc": "2.0",
@@ -55,7 +56,7 @@ class UbusClient:
             "method": "call",
             "params": params,
         }
-        async with self._session.post(self._url, json=payload, timeout=TIMEOUT) as resp:
+        async with self._session.post(self._url, json=payload, timeout=timeout) as resp:
             body = await resp.json(content_type=None)
         result = body.get("result")
         if not isinstance(result, list) or not result:
@@ -81,7 +82,8 @@ class UbusClient:
         self._token = token
 
     async def call(self, obj: str, method: str, params: dict | None = None,
-                   needs_session: bool = False) -> Any:
+                   needs_session: bool = False,
+                   timeout: aiohttp.ClientTimeout = TIMEOUT) -> Any:
         """Call a ubus object method, re-logging-in once on expiry.
 
         needs_session injects the live token into the params - rpcd's
@@ -95,7 +97,7 @@ class UbusClient:
             if needs_session:
                 p = {**p, "session": self._token}
             try:
-                return await self._post([self._token, obj, method, p])
+                return await self._post([self._token, obj, method, p], timeout)
             except UbusError as err:
                 if "code 6" in str(err) or "-32002" in str(err):
                     _LOGGER.debug("Ubus session expired/denied, re-login")
@@ -103,7 +105,7 @@ class UbusClient:
                     await self._login()
                     if needs_session:
                         p = {**p, "session": self._token}
-                    return await self._post([self._token, obj, method, p])
+                    return await self._post([self._token, obj, method, p], timeout)
                 raise
 
     # -- convenience wrappers ------------------------------------------------
@@ -136,14 +138,50 @@ class UbusClient:
         data = await self.call("iwinfo", "devices", {})
         return data.get("devices", []) or []
 
-    async def _file_exec(self, command: str, params: list[str]) -> dict:
+    async def _file_exec(self, command: str, params: list[str],
+                         timeout: aiohttp.ClientTimeout = TIMEOUT) -> dict:
         """file.exec on OpenWrt >=24ish: `command` is the program path and the
         session id must be echoed inside the params (rpcd CSRF check)."""
         return await self.call(
             "file", "exec",
             {"command": command, "params": params},
             needs_session=True,
+            timeout=timeout,
         )
+
+    async def speedtest_down(self, url: str, duration: float = 12.0) -> dict:
+        """Downlink test run *on the radio*: pull `url` for up to `duration`
+        seconds with uclient-fetch, count received bytes, return Mbps.
+
+        Measures the dish's own uplink path end-to-end - exactly what
+        auto-align optimizes. Uses only stock OpenWrt tools (timeout +
+        uclient-fetch), so there's nothing extra to install.
+        """
+        cmd = (
+            f"timeout {int(duration)} uclient-fetch -q "
+            f"--no-check-certificate -O- '{url}' 2>/dev/null | wc -c"
+        )
+        t0 = time.monotonic()
+        data = await self._file_exec(
+            "/bin/sh", ["-c", cmd],
+            timeout=aiohttp.ClientTimeout(total=duration + 8),
+        )
+        elapsed = time.monotonic() - t0
+        try:
+            nbytes = int((data.get("stdout") or "0").strip())
+        except ValueError:
+            nbytes = 0
+        if nbytes <= 0:
+            raise UbusError(
+                "download test returned no data - is the uplink actually up?"
+            )
+        mbps = nbytes * 8 / 1_000_000 / max(elapsed, 0.1)
+        return {
+            "mbps": round(mbps, 1),
+            "bytes": nbytes,
+            "seconds": round(elapsed, 1),
+            "source": "radio",
+        }
 
     async def _apk_installed(self, pkg: str) -> bool | None:
         """`apk info -e <pkg>` exit status - None if apk itself can't run."""

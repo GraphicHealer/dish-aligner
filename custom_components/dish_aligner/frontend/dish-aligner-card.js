@@ -95,6 +95,15 @@ class DishAlignerCard extends HTMLElement {
     this._render();
   }
 
+  _setNotice(msg) {
+    this._notice = msg;
+    clearTimeout(this._noticeTimer);
+    this._noticeTimer = setTimeout(() => {
+      this._notice = null;
+      if (!this._dragging) this._render();
+    }, 6000);
+  }
+
   _svc(name, data = {}) {
     this._callErr = null;
     this._notice = null;
@@ -204,7 +213,6 @@ class DishAlignerCard extends HTMLElement {
     }
     this._prevConnBssid = connAp?.bssid ?? null;
     if (status === "surveying" && this._prevStatus !== "surveying") this._listOpen = true;
-    this._prevStatus = status;
     const mapMode = !!connAp && !this._listOpen;
 
     // Remember which AP we were on before this op started, so the
@@ -224,15 +232,15 @@ class DishAlignerCard extends HTMLElement {
           setTimeout(() => this._retryJoin(pending), 50);
         }
       } else if (connSsid && connBssid && connBssid !== this._preOpBssid) {
-        this._notice = `Connected to ${connSsid}`;
-        clearTimeout(this._noticeTimer);
-        this._noticeTimer = setTimeout(() => {
-          this._notice = null;
-          if (!this._dragging) this._render();
-        }, 6000);
+        this._setNotice(`Connected to ${connSsid}`);
+      } else if (this._prevStatus === "aligning" && connAttrs.last_align) {
+        const la = connAttrs.last_align;
+        this._setNotice(`Aligned at ${Math.round(la.azimuth)}°` +
+          (la.verified?.mbps != null ? ` - ${la.verified.mbps} Mbps` : ""));
       }
     }
     this._prevBusy = busy;
+    this._prevStatus = status;
     const err = this._callErr || connAttrs.last_error;
     const errShown = err && err !== this._dismissedErr;
 
@@ -428,7 +436,7 @@ class DishAlignerCard extends HTMLElement {
         </div>
         <div class="status">
           <b>${status}</b>${progress ? ` - step ${progress.step}/${progress.total} @ ${Math.round(progress.azimuth)}&deg;` : ""}
-          &middot; <span id="az-in" title="Click to enter a bearing">${Math.round(az)}&deg;</span>${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}
+          &middot; <span id="az-in" title="Click to enter a bearing">${Math.round(az)}&deg;</span>${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}${connAttrs.last_align?.verified?.mbps != null ? ` &middot; &darr;${connAttrs.last_align.verified.mbps} Mbps` : ""}
         </div>
         ${this._notice ? `<div class="banner ok"><span>${this._notice}</span><button class="x" data-dismiss="notice" title="Dismiss">&times;</button></div>` : ""}
         ${errShown ? `<div class="banner err"><span>&#9888;</span><span>${err}</span><button class="x" data-dismiss="err" title="Dismiss">&times;</button></div>` : ""}

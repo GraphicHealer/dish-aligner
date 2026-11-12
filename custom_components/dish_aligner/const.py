@@ -43,6 +43,7 @@ CONF_STEP_DEGREES = "step_degrees"
 CONF_DWELL_SECONDS = "dwell_seconds"
 CONF_SURVEY_STEP_DEGREES = "survey_step_degrees"
 CONF_EXCLUDED_APS = "excluded_aps"       # comma-separated SSIDs or BSSIDs
+CONF_BUILTIN_SPEEDTEST = "builtin_speedtest"  # radio-side download test after align
 
 DEFAULT_WIFI_INTERFACE = "phy0-sta0"
 DEFAULT_SWEEP_DEGREES = 30
@@ -50,6 +51,9 @@ DEFAULT_STEP_DEGREES = 5
 DEFAULT_DWELL_SECONDS = 3
 DEFAULT_SURVEY_STEP_DEGREES = 15
 DEFAULT_AUTO_HOME = True
+DEFAULT_BUILTIN_SPEEDTEST = False        # off by default - metered uplinks exist
+SPEEDTEST_URL = "https://speed.cloudflare.com/__down?bytes=104857600"  # 100MB cap
+SPEEDTEST_DURATION = 12                  # s of download per verification
 SIGNAL_SAMPLES = 3
 
 # Entity signatures we auto-resolve on each device:

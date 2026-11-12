@@ -21,6 +21,7 @@ from .const import (
     CONF_ANGLE_ENTITY,
     CONF_AUTO_HOME,
     CONF_BITRATE_ENTITY,
+    CONF_BUILTIN_SPEEDTEST,
     CONF_DISH_DEVICE,
     CONF_DWELL_SECONDS,
     CONF_EXCLUDED_APS,
@@ -38,6 +39,7 @@ from .const import (
     CONF_VERIFY_SPEEDTEST,
     CONF_WIFI_INTERFACE,
     DEFAULT_AUTO_HOME,
+    DEFAULT_BUILTIN_SPEEDTEST,
     DEFAULT_DWELL_SECONDS,
     DEFAULT_STEP_DEGREES,
     DEFAULT_SURVEY_STEP_DEGREES,
@@ -329,6 +331,12 @@ class DishAlignerOptionsFlow(config_entries.OptionsFlow):
                         CONF_EXCLUDED_APS,
                         default=opts.get(CONF_EXCLUDED_APS, ""),
                     ): str,
+                    vol.Optional(
+                        CONF_BUILTIN_SPEEDTEST,
+                        default=opts.get(
+                            CONF_BUILTIN_SPEEDTEST, DEFAULT_BUILTIN_SPEEDTEST
+                        ),
+                    ): bool,
                     vol.Optional(CONF_VERIFY_SPEEDTEST): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="button")
                     ),
