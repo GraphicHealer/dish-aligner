@@ -143,11 +143,14 @@ class DishAlignerCard extends HTMLElement {
     return 38 + t * 100;
   }
 
-  // Site-survey heat colors: weak blue -> green -> yellow -> strong red
+  // Heat colors: strong green -> weak red, alpha squared so the fan only
+  // really shows near the AP's peak (dB is already a log scale, so a
+  // quadratic alpha concentrates the visible area instead of painting
+  // a broad wash across every bearing the AP was barely audible on).
   _heatColor(dbm) {
     const t = Math.min(1, Math.max(0, (dbm + 95) / 55)); // -95..-40 -> 0..1
-    const hue = 220 - t * 220;
-    return `hsla(${hue},85%,50%,${(0.16 + t * 0.5).toFixed(2)})`;
+    const hue = t * 120;
+    return `hsla(${hue},80%,45%,${(0.45 * t * t).toFixed(3)})`;
   }
 
   // Annular-sector heat fan between the AP's measured sample bearings:
@@ -164,13 +167,13 @@ class DishAlignerCard extends HTMLElement {
       while (p[0] - pk < -180) p[0] += 360;
     });
     s.sort((a, b) => a[0] - b[0]);
-    const gap = Math.max(5, (s[s.length - 1][0] - s[0][0]) / (s.length - 1));
+    const gap = Math.max(5, (s[s.length - 1][0] - s[0][0]) / (s.length - 1)) * 1.5;
     const pts = [
       [s[0][0] - gap, -95],
       ...s,
       [s[s.length - 1][0] + gap, -95],
     ];
-    const Rin = 42, Rout = 136;
+    const Rin = 42, Rout = 138;
     let out = "";
     for (let i = 0; i < pts.length - 1; i++) {
       const [a0, d0] = pts[i], [a1, d1] = pts[i + 1];
@@ -465,6 +468,16 @@ class DishAlignerCard extends HTMLElement {
       <ha-card style="position:relative">
         <div class="dial-wrap">
         <svg viewBox="0 0 300 300">
+          <defs>
+            <radialGradient id="heatfade" cx="${CX}" cy="${CY}" r="140" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#fff"/>
+              <stop offset="0.55" stop-color="#fff"/>
+              <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+            </radialGradient>
+            <mask id="heatmask" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="300">
+              <rect x="0" y="0" width="300" height="300" fill="url(#heatfade)"/>
+            </mask>
+          </defs>
           <circle cx="${CX}" cy="${CY}" r="${R}" class="ring"/>
           ${grid}
           ${ticks}${labels}
@@ -481,7 +494,7 @@ class DishAlignerCard extends HTMLElement {
                   stroke="var(--primary-text-color,#fff)" stroke-width="1.8"/>
             <circle cx="${CX}" cy="${CY - 10.5}" r="2.6" fill="var(--primary-text-color,#fff)"/>
           </g>
-          <g class="lobes">${lobe}</g>
+          <g class="lobes" mask="url(#heatmask)">${lobe}</g>
           ${markers}
           <text class="drag-num" x="${CX}" y="${CY + 32}" opacity="${this._dragging ? 1 : 0}">${this._dragging ? `${Math.round(this._dragAngle)}°` : ""}</text>
         </svg>
