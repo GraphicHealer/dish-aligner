@@ -326,6 +326,9 @@ class DishController:
         """Full-rotation AP survey, deduplicated per BSSID at strongest angle."""
 
         async def run():
+            # Clear stale results up front - the card repopulates live below
+            self.survey_results = []
+            self._notify()
             if self._opt(CONF_AUTO_HOME, DEFAULT_AUTO_HOME) and self.home_button:
                 self.status = STATUS_HOMING
                 self._notify()
@@ -357,24 +360,28 @@ class DishController:
                         "crypto": ap.get("encryption") or ap.get("crypto") or {},
                         "dbm": None,
                         "azimuth": None,
-                        "_samples": [],
+                        "samples": [],
                     })
                     if not entry["ssid"] and ap.get("ssid"):
                         entry["ssid"] = ap["ssid"]
                     sig = ap.get("signal")
                     if sig is not None:
-                        entry["_samples"].append((az, sig))
+                        entry["samples"].append((az, sig))
                         if entry["dbm"] is None or sig > entry["dbm"]:
                             entry["dbm"] = sig
-                            entry["azimuth"] = az
-            for entry in found.values():
-                peak = _interp_bearing(entry.pop("_samples"))
-                if peak is not None:
-                    entry["azimuth"] = round(peak, 1)
-            self.survey_results = sorted(
-                found.values(), key=lambda a: (a["dbm"] is not None, a["dbm"]), reverse=True
-            )
-            self._notify()
+                # Re-estimate bearings from everything heard so far and
+                # republish - the card shows the survey filling in live,
+                # with markers settling onto their interpolated bearings
+                for entry in found.values():
+                    peak = _interp_bearing(entry["samples"])
+                    if peak is not None:
+                        entry["azimuth"] = round(peak, 1)
+                self.survey_results = sorted(
+                    found.values(),
+                    key=lambda a: (a["dbm"] is not None, a["dbm"]),
+                    reverse=True,
+                )
+                self._notify()
 
         self._start(STATUS_SURVEYING, run())
 
@@ -534,13 +541,17 @@ class DishController:
                 samples.setdefault(b, []).append((az, sig))
         merged = {}
         for b, samps in samples.items():
-            merged[b] = self._merge_survey_hit(ssid, hits_by_bssid[b], _interp_bearing(samps))
+            merged[b] = self._merge_survey_hit(
+                ssid, hits_by_bssid[b], _interp_bearing(samps), samples=samps
+            )
         if not merged:
             return None
         best_b = max(merged, key=lambda b: merged[b]["dbm"] or -999)
         return merged[best_b]
 
-    def _merge_survey_hit(self, ssid: str, hit: dict, azimuth) -> dict:
+    def _merge_survey_hit(
+        self, ssid: str, hit: dict, azimuth, samples: list | None = None
+    ) -> dict:
         """Fold a probe result into survey_results (keyed by BSSID)."""
         ap = {
             "ssid": ssid,
@@ -550,6 +561,8 @@ class DishController:
             "dbm": hit.get("signal"),
             "azimuth": azimuth,
         }
+        if samples:
+            ap["samples"] = [list(s) for s in samples]
         existing = next(
             (a for a in self.survey_results if a["bssid"] == ap["bssid"]), None
         )

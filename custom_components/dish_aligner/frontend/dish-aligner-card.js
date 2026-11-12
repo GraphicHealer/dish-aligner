@@ -17,6 +17,7 @@
  */
 
 const TAU = Math.PI * 2;
+const CX = 150, CY = 150, R = 110;
 
 class DishAlignerCard extends HTMLElement {
   constructor() {
@@ -75,13 +76,13 @@ class DishAlignerCard extends HTMLElement {
     if (!this._dragging) return;
     this._dragAngle = this._onPointer(e);
     // mutate the needle in place - full re-render would drop pointer capture
-    const [x, y] = this._pt(150, 150, 102, this._dragAngle);
+    const [x, y] = this._pt(CX, CY, R - 8, this._dragAngle);
     const line = this.shadowRoot.querySelector(".target-line");
-    const knob = this.shadowRoot.querySelector(".target-dot");
-    if (line && knob) {
+    const ind = this.shadowRoot.querySelector(".target-ind");
+    if (line) {
       line.setAttribute("x2", x); line.setAttribute("y2", y);
-      knob.setAttribute("cx", x); knob.setAttribute("cy", y);
     }
+    if (ind) ind.setAttribute("transform", `rotate(${this._dragAngle} ${CX} ${CY})`);
   }
   _up(e) {
     if (!this._dragging) return;
@@ -185,8 +186,24 @@ class DishAlignerCard extends HTMLElement {
     const connAttrs = this._st(c.status_entity)?.attributes ?? {};
     const connBssid = (connAttrs.connected_bssid || "").toLowerCase();
     const connSsid = connAttrs.connected_ssid;
+    const connAp = aps.find(
+      (a) => (connBssid && a.bssid === connBssid) || (connSsid && a.ssid === connSsid)
+    );
     const shown = this._dragging ? this._dragAngle : target;
     const busy = status !== "idle" && status !== "unknown";
+
+    // AP list collapse state: starts open unless already connected; a fresh
+    // connection collapses it into map view, a new survey re-opens it so the
+    // user can watch results fill in
+    if (this._listOpen === undefined) this._listOpen = !connAp;
+    if (connAp && !this._prevConnBssid &&
+        status !== "surveying" && status !== "finding") {
+      this._listOpen = false;
+    }
+    this._prevConnBssid = connAp?.bssid ?? null;
+    if (status === "surveying" && this._prevStatus !== "surveying") this._listOpen = true;
+    this._prevStatus = status;
+    const mapMode = !!connAp && !this._listOpen;
 
     // Remember which AP we were on before this op started, so the
     // "Connected" notice only fires when the association actually moved
@@ -217,7 +234,6 @@ class DishAlignerCard extends HTMLElement {
     const err = this._callErr || connAttrs.last_error;
     const errShown = err && err !== this._dismissedErr;
 
-    const CX = 150, CY = 150, R = 110;
     let ticks = "";
     for (let d = 0; d < 360; d += 15) {
       const [x1, y1] = this._pt(CX, CY, R, d);
@@ -240,11 +256,44 @@ class DishAlignerCard extends HTMLElement {
                <text x="${CX + 4}" y="${CY - r + 4}" class="grid-label">${d}</text>`;
     }
 
+    // Connected view: the AP's measured beam lobe - every (azimuth, dBm)
+    // sample from the survey plotted on the same dBm radius scale as the
+    // markers, so the shape shows where this AP is audible and how sharply
+    // its signal falls off either side of the peak.
+    let lobe = "";
+    if (mapMode) {
+      const s = (connAp.samples || [])
+        .map((p) => [+p[0], +p[1]])
+        .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      if (s.length >= 2) {
+        const pk = connAp.azimuth ?? s[0][0];
+        s.forEach((p) => {
+          while (p[0] - pk > 180) p[0] -= 360;
+          while (p[0] - pk < -180) p[0] += 360;
+        });
+        s.sort((a, b) => a[0] - b[0]);
+        const gap = Math.max(5, (s[s.length - 1][0] - s[0][0]) / (s.length - 1));
+        const pts = [
+          [s[0][0] - gap, 136],
+          ...s.map((p) => [p[0], this._dbmRadius(p[1])]),
+          [s[s.length - 1][0] + gap, 136],
+        ];
+        const d = pts.map((p, i) => {
+          const [x, y] = this._pt(CX, CY, p[1], p[0]);
+          return `${i ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+        }).join(" ") + " Z";
+        const [lx, ly] = this._pt(CX, CY, R - 4, pk);
+        lobe = `<line class="lobe-peak" x1="${CX}" y1="${CY}" x2="${lx}" y2="${ly}"/>
+                <path class="lobe" d="${d}"/>`;
+      }
+    }
+
     // AP markers: bearing = best azimuth, radius = signal strength.
-    // Overlapping markers get nudged outward so they stay clickable.
+    // Overlapping markers get nudged outward so they stay clickable. In map
+    // mode only the connected AP is drawn, over its beam lobe.
     let markers = "";
     const placed = [];
-    for (const ap of aps) {
+    for (const ap of (mapMode ? [connAp] : aps)) {
       if (ap.azimuth == null) continue;
       let r = this._dbmRadius(ap.dbm);
       while (
@@ -255,6 +304,7 @@ class DishAlignerCard extends HTMLElement {
             Math.abs(r - p.r) < 12
         )
       ) r += 12;
+      r = Math.min(r, 130); // keep clear of the rim setpoint triangle
       placed.push({ az: ap.azimuth, r });
       const [mx, my] = this._pt(CX, CY, r, ap.azimuth);
       const isConn =
@@ -288,7 +338,7 @@ class DishAlignerCard extends HTMLElement {
         .wedge { fill:var(--primary-color); opacity:.22; }
         .beam { stroke:var(--primary-color); stroke-width:3; }
         .target-line { stroke:var(--accent-color, var(--primary-color)); stroke-dasharray:6 4; stroke-width:2; }
-        .target-dot { fill:var(--accent-color, var(--primary-color)); stroke:#fff; stroke-width:1.5; }
+        .target-ind path { fill:var(--accent-color, var(--primary-color)); stroke:#fff; stroke-width:1.5; }
         .grid-ring { fill:none; stroke:var(--divider-color,#444); stroke-width:.7; stroke-dasharray:2 4; opacity:.6; }
         .grid-label { fill:var(--secondary-text-color,#888); font-size:8px; text-anchor:start; dominant-baseline:middle; }
         .dish { stroke-linecap:round; }
@@ -336,6 +386,16 @@ class DishAlignerCard extends HTMLElement {
                    color:var(--secondary-text-color,#888); padding:0; font-size:15px; }
         tr[data-bssid] { cursor:pointer; }
         tr[data-bssid]:hover td { background:var(--secondary-background-color,rgba(128,128,128,.12)); }
+        .lobe { fill:var(--primary-color); fill-opacity:.16;
+                stroke:var(--primary-color); stroke-width:1.2; stroke-opacity:.55; }
+        .lobe-peak { stroke:var(--primary-color); stroke-width:1;
+                     stroke-dasharray:3 4; opacity:.6; }
+        .aplist-head { width:100%; text-align:left; padding:7px 10px; margin-top:8px;
+                       border-radius:6px; font-size:13px;
+                       background:var(--secondary-background-color,#e8e8e8);
+                       color:var(--primary-text-color,#111); }
+        .aplist-head .caret { display:inline-block; margin-right:6px;
+                              transition:transform .15s; }
       </style>
       <ha-card style="position:relative">
         <div class="dial-wrap">
@@ -346,7 +406,9 @@ class DishAlignerCard extends HTMLElement {
           <path class="wedge" d="${this._wedge(CX, CY, R - 4, az, this._beamwidth)}"/>
           <line class="beam" x1="${CX}" y1="${CY}" x2="${ax}" y2="${ay}"/>
           ${shown != null ? `<line class="target-line" x1="${CX}" y1="${CY}" x2="${tx}" y2="${ty}"/>
-          <circle class="target target-dot" cx="${tx}" cy="${ty}" r="9"/>` : ""}
+          <g class="target-ind" transform="rotate(${shown} ${CX} ${CY})">
+            <path d="M ${CX - 8} ${CY - 146} L ${CX + 8} ${CY - 146} L ${CX} ${CY - 133} Z"/>
+          </g>` : ""}
           <g class="dish" transform="rotate(${az} ${CX} ${CY})">
             <path d="M ${CX - 10} ${CY + 2} Q ${CX} ${CY + 14} ${CX + 10} ${CY + 2}"
                   fill="none" stroke="var(--primary-text-color,#fff)" stroke-width="2.4"/>
@@ -376,7 +438,10 @@ class DishAlignerCard extends HTMLElement {
           <button id="home" ${busy ? "disabled" : ""}>Re-Home</button>
           <button id="abort" class="danger" ${busy ? "" : "disabled"}>Abort</button>
         </div>
-        ${aps.length ? `<table>
+        ${aps.length ? `
+        <button id="aplist-toggle" class="aplist-head"><span class="caret" style="transform:rotate(${this._listOpen ? 90 : 0}deg)">&#9656;</span>Survey results &middot; ${aps.length} AP${aps.length === 1 ? "" : "s"}${connAp ? ` &middot; connected: ${connAp.ssid}` : ""}</button>
+        <div style="display:${this._listOpen ? "block" : "none"}">
+        <table>
           <tr><th>SSID</th><th>dBm</th><th>Angle</th><th>Ch</th><th>Sec</th><th></th></tr>
           ${rows}
           <tr id="manual-row" style="display:${this._manualOpen ? "table-row" : "none"}">
@@ -387,7 +452,8 @@ class DishAlignerCard extends HTMLElement {
           <tr>
             <td colspan="5"><button id="manual" class="join" style="margin-top:6px">${this._manualOpen ? "Cancel" : "+ Connect to another network"}</button></td>
           </tr>
-        </table>` : `<div class="hint">No APs mapped yet - run <b>Wi-Fi Survey</b> to scan the horizon.</div>`}
+        </table>
+        </div>` : `<div class="hint">No APs mapped yet - run <b>Wi-Fi Survey</b> to scan the horizon.</div>`}
       </ha-card>`;
 
     const svg = this.shadowRoot.querySelector("svg");
@@ -440,6 +506,10 @@ class DishAlignerCard extends HTMLElement {
         this._render();
       })
     );
+    this.shadowRoot.getElementById("aplist-toggle")?.addEventListener("click", () => {
+      this._listOpen = !this._listOpen;
+      this._render();
+    });
     this.shadowRoot.getElementById("manual")?.addEventListener("click", () => {
       this._manualOpen = !this._manualOpen;
       this._render();
