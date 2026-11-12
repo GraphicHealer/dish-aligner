@@ -131,9 +131,12 @@ class DishAlignerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Check iwinfo/iw/ACL on the radio; block until they're in place."""
         client = await self._client()
         status = await client.package_status()
-        missing = [k for k, v in status.items() if not v]
+        missing = [
+            k for k, v in status.items() if not v and "(optional)" not in k
+        ]
         marks = "\n".join(
-            f"{'✅' if ok else '❌'} `{name}`" for name, ok in status.items()
+            f"{'✅' if ok else ('ℹ️' if '(optional)' in name else '❌')} `{name}`"
+            for name, ok in status.items()
         )
 
         if missing:

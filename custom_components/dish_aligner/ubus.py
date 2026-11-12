@@ -274,6 +274,18 @@ class UbusClient:
         except UbusError:
             status["rpcd ACL"] = False
 
+        # librespeed-cli is optional - enables full ping/upload results for
+        # the post-align speed test when installed (pkg or static binary)
+        try:
+            data = await self._file_exec(
+                "/bin/sh", ["-c", "command -v librespeed-cli"]
+            )
+            status["librespeed-cli (optional)"] = bool(
+                (data.get("stdout") or "").strip()
+            )
+        except UbusError:
+            status["librespeed-cli (optional)"] = False
+
         return status
 
     async def iwinfo_info(self, device: str) -> dict:
