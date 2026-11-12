@@ -492,17 +492,24 @@ class DishController:
                 await self._move(ap["azimuth"])
 
             enc = encryption or _encryption_for(ap)
-            sections = await self.ubus.uci_state("wireless")
+            wireless = await self.ubus.uci_state("wireless")
+            # ubus `uci state` nests sections under "values"
+            sections = wireless.get("values", wireless)
+            stas = [
+                (name, sec)
+                for name, sec in sections.items()
+                if sec.get("mode") == "sta"
+            ]
             sta, sta_sec = next(
-                (
-                    (name, sec)
-                    for name, sec in sections.items()
-                    if sec.get("mode") == "sta" and sec.get("network") == "wwan"
-                ),
-                (None, None),
+                ((n, s) for n, s in stas if _has_net(s, "wwan")),
+                stas[0] if len(stas) == 1 else (None, None),
             )
             if sta is None:
-                raise UbusError("No STA-mode wireless iface bound to wwan found")
+                raise UbusError(
+                    f"No STA-mode wireless iface bound to wwan found "
+                    f"({len(stas)} sta iface(s) seen: "
+                    f"{[n for n, _ in stas] or 'none'})"
+                )
 
             # Snapshot before touching anything so we can roll back
             previous = {
@@ -731,6 +738,15 @@ def _spread(lo: float, hi: float, step: float) -> list[float]:
         pts.append(d)
         d += step
     return sorted(pts, key=abs)
+
+
+def _has_net(sec: dict, name: str) -> bool:
+    """True if the wireless iface section is bound to `name` - the network
+    option can be a plain string or a UCI list."""
+    net = sec.get("network")
+    if isinstance(net, list):
+        return name in net
+    return net == name
 
 
 def _encryption_for(ap: dict | None) -> str:
