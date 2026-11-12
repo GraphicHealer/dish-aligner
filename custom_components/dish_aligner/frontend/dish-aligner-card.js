@@ -149,7 +149,7 @@ class DishAlignerCard extends HTMLElement {
   // strong AP earns all three bands while a weak one may only rate red.
   _signalArc(ap) {
     if (ap?.azimuth == null || ap.dbm == null) return "";
-    const K = 1.5, Rin = 42, Rout = 138, pk = ap.azimuth;
+    const K = 1.5, Rin = 42, Rout = R, pk = ap.azimuth;
     let out = "";
     for (const [th, color] of [[-80, "#c0392b"], [-74, "#f39c12"], [-65, "#00a803"]]) {
       const half = Math.min(30, Math.max(th === -80 ? 1.2 : 0, (ap.dbm - th) / K));
@@ -158,7 +158,7 @@ class DishAlignerCard extends HTMLElement {
       const [x2, y2] = this._pt(CX, CY, Rout, pk + half);
       const [x3, y3] = this._pt(CX, CY, Rin, pk + half);
       const [x4, y4] = this._pt(CX, CY, Rin, pk - half);
-      out += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${Rout} ${Rout} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${Rin} ${Rin} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${color}"/>`;
+      out += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${Rout} ${Rout} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${Rin} ${Rin} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${color}" fill-opacity="0.45"/>`;
     }
     return out;
   }
@@ -436,6 +436,7 @@ class DishAlignerCard extends HTMLElement {
         <div class="dial-wrap">
         <svg viewBox="0 0 300 300">
           <circle cx="${CX}" cy="${CY}" r="${R}" class="ring"/>
+          <g class="lobes">${lobe}</g>
           ${grid}
           ${ticks}${labels}
           <path class="wedge" d="${this._wedge(CX, CY, R - 4, az, this._beamwidth)}"/>
@@ -451,7 +452,6 @@ class DishAlignerCard extends HTMLElement {
                   stroke="var(--primary-text-color,#fff)" stroke-width="1.8"/>
             <circle cx="${CX}" cy="${CY - 10.5}" r="2.6" fill="var(--primary-text-color,#fff)"/>
           </g>
-          <g class="lobes">${lobe}</g>
           ${markers}
           <text class="drag-num" x="${CX}" y="${CY + 32}" opacity="${this._dragging ? 1 : 0}">${this._dragging ? `${Math.round(this._dragAngle)}°` : ""}</text>
         </svg>
