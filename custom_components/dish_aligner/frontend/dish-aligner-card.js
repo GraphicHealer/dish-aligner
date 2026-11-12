@@ -187,6 +187,11 @@ class DishAlignerCard extends HTMLElement {
     const shown = this._dragging ? this._dragAngle : target;
     const busy = status !== "idle" && status !== "unknown";
 
+    // Remember which AP we were on before this op started, so the
+    // "Connected" notice only fires when the association actually moved
+    if (!this._prevBusy && busy) {
+      this._preOpBssid = connBssid;
+    }
     // Surface a clean result when an op finishes: red banner with the
     // controller's reason on failure, green notice on a fresh connect
     if (this._prevBusy && status === "idle") {
@@ -198,7 +203,7 @@ class DishAlignerCard extends HTMLElement {
         if (pending && /password/i.test(connAttrs.last_error)) {
           setTimeout(() => this._retryJoin(pending), 50);
         }
-      } else if (connSsid) {
+      } else if (connSsid && connBssid && connBssid !== this._preOpBssid) {
         this._notice = `Connected to ${connSsid}`;
         clearTimeout(this._noticeTimer);
         this._noticeTimer = setTimeout(() => {
