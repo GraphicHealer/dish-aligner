@@ -50,7 +50,8 @@ _LOGGER = logging.getLogger(__name__)
 SETTLE_POLL = 0.2          # s between moving-sensor polls
 MOVE_START_TIMEOUT = 5.0   # s to see "moving" after commanding a target
 MOVE_TIMEOUT = 30.0        # s for any single move to complete
-HOME_TIMEOUT = 30.0        # s for the homing routine
+HOME_TIMEOUT = 60.0        # s for the whole homing routine incl. return move
+HOME_SCRIPT_GRACE = 13.5   # home_azimuth's fixed 12s delay + margin
 SAMPLE_SPACING = 0.5       # s between signal samples at a stop
 JOIN_TIMEOUT = 45.0        # s to wait for the new uplink to come up
 
@@ -173,6 +174,42 @@ class DishController:
                 )
             await asyncio.sleep(SETTLE_POLL)
 
+    async def _wait_settled(self, timeout: float, quiet_for: float = 2.5) -> None:
+        """Wait for `moving` to stay False for `quiet_for` seconds.
+
+        During stall-homing the stepper's commanded count reaches the
+        unreachable target and `moving` blips off while the ESP-side script
+        is still in its settle delay + return move. A bare wait_moving(False)
+        exits there and lets the next command race the script - this waits
+        through short blips.
+        """
+        deadline = time.monotonic() + timeout
+        quiet = 0.0
+        while time.monotonic() < deadline:
+            if self.moving:
+                quiet = 0.0
+            else:
+                quiet += SETTLE_POLL
+                if quiet >= quiet_for:
+                    return
+            await asyncio.sleep(SETTLE_POLL)
+        raise HomeAssistantError(
+            f"Timed out waiting for the dish to settle on {self.moving_entity}"
+        )
+
+    async def _home_and_wait(self) -> None:
+        """Press the home button and wait for the whole routine to finish.
+
+        The ESP script is: drive to -40 (stall), fixed 12s delay, re-zero,
+        then a return move. `moving` is False through most of the delay, so
+        we first sleep past it (HOME_SCRIPT_GRACE), then wait for the return
+        move to finish and the sensor to stay quiet - covers both the blip
+        and the case where moving never turns on at all.
+        """
+        await self._press(self.home_button)
+        await asyncio.sleep(HOME_SCRIPT_GRACE)
+        await self._wait_settled(HOME_TIMEOUT - HOME_SCRIPT_GRACE)
+
     async def _move(self, azimuth: float) -> None:
         """Command an absolute displayed azimuth and wait for the dish to stop."""
         azimuth = round(azimuth % 360)
@@ -248,12 +285,7 @@ class DishController:
         if not self.home_button:
             raise HomeAssistantError("No home button resolved for this dish")
 
-        async def run():
-            await self._press(self.home_button)
-            await self._wait_moving(True, HOME_TIMEOUT)
-            await self._wait_moving(False, HOME_TIMEOUT)
-
-        self._start(STATUS_HOMING, run())
+        self._start(STATUS_HOMING, self._home_and_wait())
 
     async def auto_align(self, sweep: float, step: float, dwell: float) -> None:
         """Sweep an arc, find the dBm peak, park there, verify if configured."""
@@ -295,8 +327,7 @@ class DishController:
             if self._opt(CONF_AUTO_HOME, DEFAULT_AUTO_HOME) and self.home_button:
                 self.status = STATUS_HOMING
                 self._notify()
-                await self._press(self.home_button)
-                await self._wait_moving(False, HOME_TIMEOUT)
+                await self._home_and_wait()
                 self.status = STATUS_SURVEYING
                 self._notify()
 

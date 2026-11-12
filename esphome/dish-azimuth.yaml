@@ -63,6 +63,13 @@ globals:
   - id: offset
     type: int
     initial_value: '90'
+  # Set while home_azimuth runs (stall + settle + return move). OR'd into the
+  # Azimuth Moving sensor: the stepper's commanded count reaches the stall
+  # target mid-routine and would otherwise report "stopped" while the script
+  # is still working, letting external moves race the homing.
+  - id: homing
+    type: bool
+    initial_value: 'false'
 
 stepper:
   - platform: a4988
@@ -102,7 +109,7 @@ binary_sensor:
   - platform: template
     name: "Azimuth Moving"
     device_class: moving
-    lambda: 'return (id(azimuth).current_position != id(azimuth).target_position);'
+    lambda: 'return (id(azimuth).current_position != id(azimuth).target_position) || id(homing);'
 
 button:
   # Sensorless homing: creeps ~10 deg past the zero notch at low speed until
@@ -216,22 +223,32 @@ script:
           id: azimuth
           target: !lambda 'return (id(saved_position) * 4);'
   # Sensorless homing via stall detection. The separator sits ~4 steps below
-  # position 0; driving toward -40 steps guarantees contact from any starting
-  # point without ever commanding a path through open air past the stop.
+  # position 0. Drive toward -40 steps so contact is guaranteed from any
+  # legal position; if the count has drifted outside 0-1440 (corrupted) we
+  # instead drive a full extra rotation backward so the move can never run
+  # AWAY from the stop and re-zero mid-air.
   - id: home_azimuth
     parameters:
       saved_pos: int
     then:
+      - globals.set:
+          id: homing
+          value: 'true'
       # Drop speed so the stall is gentle on the motor and gearbox
       - stepper.set_speed:
           id: azimuth
           speed: 150 steps/s
-      # Drive 10 deg past the zero notch; the separator stops it short
       - stepper.set_target:
           id: azimuth
-          target: -40
-      # Worst case: full 360 + 10 deg = 1476 steps at 150 steps/s ~= 10s
-      - delay: 12s
+          target: !lambda >
+            int cur = id(azimuth).current_position;
+            if (cur < 0 || cur > 1440) { return cur - 1480; }
+            return -40;
+      # Wait until the commanded count arrives (physical stall may be sooner)
+      - wait_until:
+          condition:
+            lambda: 'return id(azimuth).current_position == id(azimuth).target_position;'
+          timeout: 15s
       # Wherever it stopped IS mechanical zero - snap the count to it
       - stepper.report_position:
           id: azimuth
@@ -246,3 +263,10 @@ script:
       - script.execute:
           id: stepper_set
           degree: !lambda 'return saved_pos;'
+      - wait_until:
+          condition:
+            lambda: 'return id(azimuth).current_position == id(azimuth).target_position;'
+          timeout: 10s
+      - globals.set:
+          id: homing
+          value: 'false'
