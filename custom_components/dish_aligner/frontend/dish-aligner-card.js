@@ -260,15 +260,14 @@ class DishAlignerCard extends HTMLElement {
       const isConn =
         (connBssid && ap.bssid === connBssid) ||
         (connSsid && ap.ssid === connSsid);
-      markers += `<g class="ap${isConn ? " connected" : ""}" data-bssid="${ap.bssid}">
-        <title>${ap.ssid || "hidden"} · ${ap.dbm ?? "?"} dBm · ${ap.bssid}</title>
+      markers += `<g class="ap${isConn ? " connected" : ""}" data-bssid="${ap.bssid}" data-vx="${mx}" data-vy="${my}">
         ${isConn ? `<circle class="ap-halo" cx="${mx}" cy="${my}" r="10"/>` : ""}
         <circle cx="${mx}" cy="${my}" r="5.5" fill="${this._dbmColor(ap.dbm)}"/>
       </g>`;
     }
 
     const rows = aps.map((ap) => `
-      <tr>
+      <tr data-bssid="${ap.bssid}">
         <td class="ssid">${ap.ssid || "<i>hidden</i>"}</td>
         <td style="color:${this._dbmColor(ap.dbm)}">${ap.dbm ?? "?"}</td>
         <td>${ap.azimuth ?? "?"}&deg;</td>
@@ -322,8 +321,24 @@ class DishAlignerCard extends HTMLElement {
                     margin-right:3px; vertical-align:baseline; }
         .hint { text-align:center; color:var(--secondary-text-color,#888);
                 font-size:12px; margin:6px 0; }
+        .dial-wrap { position:relative; width:fit-content; margin:0 auto; }
+        .tip { position:absolute; transform:translate(-50%, calc(-100% - 14px));
+               background:var(--card-background-color,#fff); color:var(--primary-text-color,#111);
+               border:1px solid var(--divider-color,#ccc); border-radius:8px;
+               padding:8px 10px 9px; font-size:12px; min-width:140px; z-index:10;
+               box-shadow:0 4px 14px rgba(0,0,0,.35); }
+        .tip::after { content:""; position:absolute; top:100%; left:50%;
+                      transform:translateX(-50%); border:7px solid transparent;
+                      border-top-color:var(--card-background-color,#fff); }
+        .tip .trow { color:var(--secondary-text-color,#777); margin-top:2px; }
+        .tip .tip-join { margin-top:7px; }
+        .tip .tx { position:absolute; top:1px; right:7px; background:transparent;
+                   color:var(--secondary-text-color,#888); padding:0; font-size:15px; }
+        tr[data-bssid] { cursor:pointer; }
+        tr[data-bssid]:hover td { background:var(--secondary-background-color,rgba(128,128,128,.12)); }
       </style>
-      <ha-card>
+      <ha-card style="position:relative">
+        <div class="dial-wrap">
         <svg viewBox="0 0 300 300">
           <circle cx="${CX}" cy="${CY}" r="${R}" class="ring"/>
           ${grid}
@@ -341,6 +356,7 @@ class DishAlignerCard extends HTMLElement {
           </g>
           ${markers}
         </svg>
+        </div>
         <div class="status">
           <b>${status}</b>${progress ? ` - step ${progress.step}/${progress.total} @ ${Math.round(progress.azimuth)}&deg;` : ""}
           &middot; ${Math.round(az)}&deg;${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}
@@ -383,16 +399,40 @@ class DishAlignerCard extends HTMLElement {
     this.shadowRoot.getElementById("home")?.addEventListener("click", () => this._svc("home"));
     this.shadowRoot.getElementById("abort")?.addEventListener("click", () => this._svc("abort"));
     this.shadowRoot.querySelectorAll("g.ap").forEach((g) => {
+      const ap = aps.find((a) => a.bssid === g.dataset.bssid);
       g.addEventListener("pointerdown", (e) => e.stopPropagation());
-      g.addEventListener("click", () =>
-        this._join(aps.find((a) => a.bssid === g.dataset.bssid))
-      );
+      g.addEventListener("mouseenter", () => { if (!this._pin) this._tipAtMarker(ap, g); });
+      g.addEventListener("mouseleave", () => { if (!this._pin) this._hideTip(); });
+      g.addEventListener("click", () => {
+        if (this._pin === ap.bssid) { this._unpin(); this._join(ap); }
+        else { this._pin = ap.bssid; this._tipAtMarker(ap, g); }
+      });
+    });
+    this.shadowRoot.querySelectorAll("tr[data-bssid]").forEach((tr) => {
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest("button,input")) return;
+        const ap = aps.find((a) => a.bssid === tr.dataset.bssid);
+        const g = this.shadowRoot.querySelector(`g.ap[data-bssid="${ap.bssid}"]`);
+        this._pin = ap.bssid;
+        if (g) this._tipAtMarker(ap, g);
+        else this._tipAtEl(ap, tr);
+      });
     });
     this.shadowRoot.querySelectorAll(".join[data-bssid]").forEach((b) =>
       b.addEventListener("click", () =>
         this._join(aps.find((a) => a.bssid === b.dataset.bssid))
       )
     );
+    this.shadowRoot.querySelector("ha-card").addEventListener("click", (e) => {
+      if (this._pin && !e.target.closest(".tip") && !e.target.closest("g.ap") &&
+          !e.target.closest("tr[data-bssid]")) this._unpin();
+    });
+    // Re-show a pinned callout after this render pass
+    if (this._pin) {
+      const ap = aps.find((a) => a.bssid === this._pin);
+      const g = this.shadowRoot.querySelector(`g.ap[data-bssid="${this._pin}"]`);
+      if (ap && g) this._tipAtMarker(ap, g); else this._pin = null;
+    }
     this.shadowRoot.querySelectorAll(".x[data-dismiss]").forEach((b) =>
       b.addEventListener("click", () => {
         if (b.dataset.dismiss === "err") this._dismissedErr = err;
@@ -408,6 +448,48 @@ class DishAlignerCard extends HTMLElement {
       this._manualJoin()
     );
   }
+
+  // -- AP callout bubble ----------------------------------------------------
+
+  _tip(ap, left, top, host) {
+    this._hideTip();
+    const tip = document.createElement("div");
+    tip.className = "tip";
+    tip.style.left = left;
+    tip.style.top = top;
+    tip.innerHTML = `<button class="tx" title="Close">&times;</button>
+      <b>${ap.ssid || "hidden"}</b>
+      <div class="trow">${ap.dbm ?? "?"} dBm &middot; ${ap.azimuth ?? "?"}&deg; &middot; ch ${ap.channel ?? "?"}</div>
+      <div class="trow">${this._encLabel(ap)} &middot; ${ap.bssid}</div>
+      <button class="join tip-join">Join</button>`;
+    tip.querySelector(".tip-join").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._unpin();
+      this._join(ap);
+    });
+    tip.querySelector(".tx").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._unpin();
+    });
+    tip.addEventListener("click", (e) => e.stopPropagation());
+    host.appendChild(tip);
+  }
+
+  _tipAtMarker(ap, g) {
+    this._tip(ap, (+g.dataset.vx) / 3 + "%", (+g.dataset.vy) / 3 + "%",
+      this.shadowRoot.querySelector(".dial-wrap"));
+  }
+
+  // Anchor to a table row (AP has no marker on the dial)
+  _tipAtEl(ap, el) {
+    this._tip(ap,
+      el.offsetLeft + el.offsetWidth / 2 + "px",
+      el.offsetTop + "px",
+      this.shadowRoot.querySelector("ha-card"));
+  }
+
+  _hideTip() { this.shadowRoot?.querySelector(".tip")?.remove(); }
+  _unpin() { this._pin = null; this._hideTip(); }
 
   getCardSize() { return 8; }
   static getConfigElement() { return document.createElement("dish-aligner-card-editor"); }
