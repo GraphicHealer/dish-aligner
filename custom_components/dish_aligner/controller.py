@@ -22,6 +22,7 @@ from .const import (
     CONF_BITRATE_ENTITY,
     CONF_DISH_DEVICE,
     CONF_DWELL_SECONDS,
+    CONF_EXCLUDED_APS,
     CONF_HOME_BUTTON,
     CONF_MOVING_ENTITY,
     CONF_NOISE_ENTITY,
@@ -111,6 +112,21 @@ class DishController:
     def _opt(self, key: str, default: Any) -> Any:
         # Options override config-flow data; fall back to the default
         return self.entry.options.get(key, self.entry.data.get(key, default))
+
+    def _is_excluded(self, ap: dict) -> bool:
+        """Match an AP against the excluded_aps option (SSID or BSSID).
+
+        Lets users hide infrastructure APs (e.g. the RV's own router) that
+        the dish will always hear but never want to join.
+        """
+        raw = self._opt(CONF_EXCLUDED_APS, "") or ""
+        if not raw:
+            return False
+        names = {t.strip().lower() for t in raw.split(",") if t.strip()}
+        return (
+            (ap.get("bssid") or "").lower() in names
+            or (ap.get("ssid") or "").lower() in names
+        )
 
     def _state(self, entity_id: str):
         return self.hass.states.get(entity_id)
@@ -351,7 +367,7 @@ class DishController:
                     continue
                 for ap in aps:
                     bssid = (ap.get("bssid") or ap.get("ssid") or "").lower()
-                    if not bssid:
+                    if not bssid or self._is_excluded(ap):
                         continue
                     entry = found.setdefault(bssid, {
                         "ssid": ap.get("ssid") or "",
@@ -535,7 +551,7 @@ class DishController:
             for h in hits:
                 b = (h.get("bssid") or "").lower()
                 sig = h.get("signal")
-                if not b or sig is None:
+                if not b or sig is None or self._is_excluded(h):
                     continue
                 hits_by_bssid[b] = h
                 samples.setdefault(b, []).append((az, sig))

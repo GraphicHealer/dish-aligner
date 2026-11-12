@@ -42,6 +42,7 @@ CONF_SWEEP_DEGREES = "sweep_degrees"
 CONF_STEP_DEGREES = "step_degrees"
 CONF_DWELL_SECONDS = "dwell_seconds"
 CONF_SURVEY_STEP_DEGREES = "survey_step_degrees"
+CONF_EXCLUDED_APS = "excluded_aps"       # comma-separated SSIDs or BSSIDs
 
 DEFAULT_WIFI_INTERFACE = "phy0-sta0"
 DEFAULT_SWEEP_DEGREES = 30

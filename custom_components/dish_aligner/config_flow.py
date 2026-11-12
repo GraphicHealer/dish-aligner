@@ -23,6 +23,7 @@ from .const import (
     CONF_BITRATE_ENTITY,
     CONF_DISH_DEVICE,
     CONF_DWELL_SECONDS,
+    CONF_EXCLUDED_APS,
     CONF_HOME_BUTTON,
     CONF_MOVING_ENTITY,
     CONF_NOISE_ENTITY,
@@ -324,6 +325,10 @@ class DishAlignerOptionsFlow(config_entries.OptionsFlow):
                         CONF_AUTO_HOME,
                         default=opts.get(CONF_AUTO_HOME, DEFAULT_AUTO_HOME),
                     ): bool,
+                    vol.Optional(
+                        CONF_EXCLUDED_APS,
+                        default=opts.get(CONF_EXCLUDED_APS, ""),
+                    ): str,
                     vol.Optional(CONF_VERIFY_SPEEDTEST): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="button")
                     ),

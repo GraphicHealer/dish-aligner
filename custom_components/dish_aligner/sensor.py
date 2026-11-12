@@ -90,7 +90,9 @@ class DishSurveySensor(_DishBase, RestoreEntity):
         # the uplink for minutes) isn't needed just to redraw the card
         last = await self.async_get_last_state()
         if last is not None and (aps := last.attributes.get("access_points")):
-            self._controller.survey_results = list(aps)
+            self._controller.survey_results = [
+                ap for ap in aps if not self._controller._is_excluded(ap)
+            ]
             self._controller._notify()
 
     @property
