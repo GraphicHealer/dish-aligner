@@ -149,34 +149,20 @@ class DishAlignerCard extends HTMLElement {
     return c.enabled ? "secured" : "?";
   }
 
+  // Start a join by expanding the AP's row for credentials - no prompts
   _join(ap) {
-    let { ssid } = ap;
-    if (!ssid) {
-      // Hidden network - we know its BSSID/angle but not the name
-      ssid = window.prompt(`Hidden network (${ap.bssid}) - enter its SSID`, "");
-      if (!ssid) return;
-    }
-    const secured = ap.crypto?.enabled !== false;
-    const password = secured
-      ? window.prompt(`Password for "${ssid}"`, "")
-      : "";
-    if (secured && password === null) return; // cancelled
-    if (window.confirm(`Aim at ${ssid} (${ap.azimuth}\u00b0) and join it?`)) {
-      this._pendingJoin = { ssid, bssid: ap.bssid };
-      this._svc("join", { ssid, bssid: ap.bssid, password });
-    }
+    this._unpin();
+    this._listOpen = true;
+    this._joinOpen = ap.bssid;
+    this._render();
   }
 
-  // Bad password / wrong encryption -> re-prompt for the same SSID
-  _retryJoin(j) {
-    const password = window.prompt(
-      `Couldn't connect to "${j.ssid}" - the password may be wrong ` +
-      `(or the network uses a different encryption type). Password:`,
-      ""
-    );
-    if (password === null) return;
-    this._pendingJoin = j;
-    this._svc("join", { ssid: j.ssid, ...(j.bssid ? { bssid: j.bssid } : {}), password });
+  _submitJoin(ap) {
+    if (!ap) return;
+    const password = this.shadowRoot.getElementById("jpass")?.value ?? "";
+    this._joinOpen = null;
+    this._pendingJoin = { ssid: ap.ssid, bssid: ap.bssid };
+    this._svc("join", { ssid: ap.ssid, bssid: ap.bssid, password });
   }
 
   _manualJoin() {
@@ -232,9 +218,15 @@ class DishAlignerCard extends HTMLElement {
       this._pendingJoin = null;
       if (connAttrs.last_error) {
         this._notice = null;
-        // Rejected association - reopen the password prompt for that SSID
+        // Rejected association - reopen the credential row (or the manual
+        // row for a typed SSID) so the user can retry right there
         if (pending && /password/i.test(connAttrs.last_error)) {
-          setTimeout(() => this._retryJoin(pending), 50);
+          if (pending.bssid) {
+            this._listOpen = true;
+            this._joinOpen = pending.bssid;
+          } else {
+            this._manualOpen = true;
+          }
         }
       } else if (connSsid && connBssid && connBssid !== this._preOpBssid) {
         this._setNotice(`Connected to ${connSsid}`);
@@ -340,7 +332,17 @@ class DishAlignerCard extends HTMLElement {
         <td>${ap.channel ?? "?"}</td>
         <td>${this._encLabel(ap)}</td>
         <td><button class="join" data-bssid="${ap.bssid}">Join</button></td>
-      </tr>`).join("");
+      </tr>
+      ${this._joinOpen === ap.bssid ? `
+      <tr class="join-row">
+        <td colspan="6">
+          ${ap.crypto?.enabled === false
+            ? `<span class="hint-inline">Open network - no password needed.</span>`
+            : `<input id="jpass" type="password" placeholder="Password for ${ap.ssid}"/>`}
+          <button class="join" id="jgo">Connect</button>
+          <button class="join jcancel" id="jcancel">Cancel</button>
+        </td>
+      </tr>` : ""}`).join("");
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -405,6 +407,14 @@ class DishAlignerCard extends HTMLElement {
         .tip .tx { position:absolute; top:1px; right:7px; background:transparent;
                    color:var(--secondary-text-color,#888); padding:0; font-size:15px; }
         tr[data-bssid] { cursor:pointer; }
+        .join-row td { padding:6px; background:var(--secondary-background-color,rgba(128,128,128,.08)); }
+        .join-row input { padding:5px 9px; font-size:13px; margin-right:6px;
+                          border:1px solid var(--divider-color,#ccc); border-radius:6px;
+                          width:52%; background:var(--card-background-color,#fff);
+                          color:var(--primary-text-color,#111); }
+        .join-row .hint-inline { font-size:12px; color:var(--secondary-text-color,#888); margin-right:8px; }
+        .join-row button { margin-left:4px; }
+        .join-row .jcancel { background:var(--secondary-text-color,#888); }
         tr[data-bssid]:hover td { background:var(--secondary-background-color,rgba(128,128,128,.12)); }
         .lobe { fill:var(--primary-color); fill-opacity:.16;
                 stroke:var(--primary-color); stroke-width:1.2; stroke-opacity:.55; }
@@ -543,6 +553,17 @@ class DishAlignerCard extends HTMLElement {
       this._listOpen = !this._listOpen;
       this._render();
     });
+    this.shadowRoot.getElementById("jgo")?.addEventListener("click", () =>
+      this._submitJoin(aps.find((a) => a.bssid === this._joinOpen))
+    );
+    this.shadowRoot.getElementById("jcancel")?.addEventListener("click", () => {
+      this._joinOpen = null;
+      this._render();
+    });
+    this.shadowRoot.getElementById("jpass")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") this.shadowRoot.getElementById("jgo")?.click();
+    });
+    this.shadowRoot.getElementById("jpass")?.focus();
     this.shadowRoot.getElementById("manual")?.addEventListener("click", () => {
       this._manualOpen = !this._manualOpen;
       this._render();
