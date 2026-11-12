@@ -143,6 +143,53 @@ class DishAlignerCard extends HTMLElement {
     return 38 + t * 100;
   }
 
+  // Site-survey heat colors: weak blue -> green -> yellow -> strong red
+  _heatColor(dbm) {
+    const t = Math.min(1, Math.max(0, (dbm + 95) / 55)); // -95..-40 -> 0..1
+    const hue = 220 - t * 220;
+    return `hsla(${hue},85%,50%,${(0.16 + t * 0.5).toFixed(2)})`;
+  }
+
+  // Annular-sector heat fan between the AP's measured sample bearings:
+  // dBm is interpolated in dB space (antenna patterns are smooth in dB)
+  // across ~2deg slices, fading to the noise floor past the edge samples.
+  _heatLobe(ap) {
+    const s = (ap.samples || [])
+      .map((p) => [+p[0], +p[1]])
+      .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    if (s.length < 2) return "";
+    const pk = ap.azimuth ?? s[0][0];
+    s.forEach((p) => {
+      while (p[0] - pk > 180) p[0] -= 360;
+      while (p[0] - pk < -180) p[0] += 360;
+    });
+    s.sort((a, b) => a[0] - b[0]);
+    const gap = Math.max(5, (s[s.length - 1][0] - s[0][0]) / (s.length - 1));
+    const pts = [
+      [s[0][0] - gap, -95],
+      ...s,
+      [s[s.length - 1][0] + gap, -95],
+    ];
+    const Rin = 42, Rout = 136;
+    let out = "";
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [a0, d0] = pts[i], [a1, d1] = pts[i + 1];
+      if (a1 <= a0) continue;
+      const span = a1 - a0, n = Math.max(1, Math.ceil(span / 2));
+      for (let k = 0; k < n; k++) {
+        const b0 = a0 + (span * k) / n, b1 = a0 + (span * (k + 1)) / n;
+        const dbm = d0 + ((d1 - d0) * (k + 0.5)) / n;
+        const [x1, y1] = this._pt(CX, CY, Rout, b0);
+        const [x2, y2] = this._pt(CX, CY, Rout, b1);
+        const [x3, y3] = this._pt(CX, CY, Rin, b1);
+        const [x4, y4] = this._pt(CX, CY, Rin, b0);
+        out += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${Rout} ${Rout} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${Rin} ${Rin} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${this._heatColor(dbm)}"/>`;
+      }
+    }
+    const [lx, ly] = this._pt(CX, CY, R - 4, pk);
+    return `${out}<line class="lobe-peak" x1="${CX}" y1="${CY}" x2="${lx}" y2="${ly}"/>`;
+  }
+
   // Short encryption label for the table's Sec column
   _encLabel(ap) {
     const c = ap.crypto || {};
@@ -277,37 +324,12 @@ class DishAlignerCard extends HTMLElement {
                <text x="${CX + 4}" y="${CY - r + 4}" class="grid-label">${d}</text>`;
     }
 
-    // Connected view: the AP's measured beam lobe - every (azimuth, dBm)
-    // sample from the survey plotted on the same dBm radius scale as the
-    // markers, so the shape shows where this AP is audible and how sharply
-    // its signal falls off either side of the peak.
-    let lobe = "";
-    if (mapMode) {
-      const s = (connAp.samples || [])
-        .map((p) => [+p[0], +p[1]])
-        .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
-      if (s.length >= 2) {
-        const pk = connAp.azimuth ?? s[0][0];
-        s.forEach((p) => {
-          while (p[0] - pk > 180) p[0] -= 360;
-          while (p[0] - pk < -180) p[0] += 360;
-        });
-        s.sort((a, b) => a[0] - b[0]);
-        const gap = Math.max(5, (s[s.length - 1][0] - s[0][0]) / (s.length - 1));
-        const pts = [
-          [s[0][0] - gap, 136],
-          ...s.map((p) => [p[0], this._dbmRadius(p[1])]),
-          [s[s.length - 1][0] + gap, 136],
-        ];
-        const d = pts.map((p, i) => {
-          const [x, y] = this._pt(CX, CY, p[1], p[0]);
-          return `${i ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-        }).join(" ") + " Z";
-        const [lx, ly] = this._pt(CX, CY, R - 4, pk);
-        lobe = `<line class="lobe-peak" x1="${CX}" y1="${CY}" x2="${lx}" y2="${ly}"/>
-                <path class="lobe" d="${d}"/>`;
-      }
-    }
+    // Heat map: whichever AP is selected (pinned callout) gets its measured
+    // beam drawn as colored arc sectors; in connected map view the connected
+    // AP's map is always on.
+    const pinnedAp = this._pin ? aps.find((a) => a.bssid === this._pin) : null;
+    const heatAp = mapMode ? connAp : pinnedAp;
+    const lobe = heatAp ? this._heatLobe(heatAp) : "";
 
     // AP markers: bearing = best azimuth, radius = signal strength.
     // Overlapping markers get nudged outward so they stay clickable. In map
@@ -431,8 +453,6 @@ class DishAlignerCard extends HTMLElement {
         .peek { background:transparent; color:var(--secondary-text-color,#888);
                 padding:3px 6px; font-size:12px; }
         tr[data-bssid]:hover td { background:var(--secondary-background-color,rgba(128,128,128,.12)); }
-        .lobe { fill:var(--primary-color); fill-opacity:.16;
-                stroke:var(--primary-color); stroke-width:1.2; stroke-opacity:.55; }
         .lobe-peak { stroke:var(--primary-color); stroke-width:1;
                      stroke-dasharray:3 4; opacity:.6; }
         .aplist-head { width:100%; text-align:left; padding:7px 10px; margin-top:8px;
@@ -461,6 +481,7 @@ class DishAlignerCard extends HTMLElement {
                   stroke="var(--primary-text-color,#fff)" stroke-width="1.8"/>
             <circle cx="${CX}" cy="${CY - 10.5}" r="2.6" fill="var(--primary-text-color,#fff)"/>
           </g>
+          <g class="lobes">${lobe}</g>
           ${markers}
           <text class="drag-num" x="${CX}" y="${CY + 32}" opacity="${this._dragging ? 1 : 0}">${this._dragging ? `${Math.round(this._dragAngle)}°` : ""}</text>
         </svg>
@@ -525,8 +546,12 @@ class DishAlignerCard extends HTMLElement {
     this.shadowRoot.querySelectorAll("g.ap").forEach((g) => {
       const ap = aps.find((a) => a.bssid === g.dataset.bssid);
       g.addEventListener("pointerdown", (e) => e.stopPropagation());
-      g.addEventListener("mouseenter", () => { if (!this._pin) this._tipAtMarker(ap, g); });
-      g.addEventListener("mouseleave", () => { if (!this._pin) this._hideTip(); });
+      g.addEventListener("mouseenter", () => {
+        if (!this._pin) { this._tipAtMarker(ap, g); this._lobeHover(ap); }
+      });
+      g.addEventListener("mouseleave", () => {
+        if (!this._pin) { this._hideTip(); this._lobeHover(null); }
+      });
       g.addEventListener("click", () => {
         if (this._pin === ap.bssid) { this._unpin(); this._join(ap); }
         else { this._pin = ap.bssid; this._tipAtMarker(ap, g); }
@@ -652,6 +677,20 @@ class DishAlignerCard extends HTMLElement {
       el.offsetLeft + el.offsetWidth / 2 + "px",
       el.offsetTop + "px",
       this.shadowRoot.querySelector("ha-card"));
+  }
+
+  // Inject a heat lobe into the .lobes group without a full re-render -
+  // used while hovering a marker (the pinned/connected lobe is baked in)
+  _lobeHover(ap) {
+    const lobes = this.shadowRoot?.querySelector(".lobes");
+    if (!lobes) return;
+    lobes.querySelector(".hover-lobe")?.remove();
+    if (ap) {
+      lobes.insertAdjacentHTML(
+        "beforeend",
+        `<g class="hover-lobe">${this._heatLobe(ap)}</g>`
+      );
+    }
   }
 
   _hideTip() { this.shadowRoot?.querySelector(".tip")?.remove(); }
