@@ -143,55 +143,22 @@ class DishAlignerCard extends HTMLElement {
     return 38 + t * 100;
   }
 
-  // Heat colors: green at the AP's own peak -> red ~35dB down, so the
-  // gradient is always visible even when every sample is "strong" in
-  // absolute terms. Alpha stays absolute and quadratic so the fan only
-  // really shows near the peak bearing and weak APs render fainter.
-  _heatColor(dbm, hi) {
-    const t = Math.min(1, Math.max(0, (dbm + 95) / 55)); // -95..-40 -> 0..1
-    const c = Math.min(1, Math.max(0, (dbm - (hi - 35)) / 35));
-    return `hsla(${c * 120},80%,45%,${(0.45 * t * t).toFixed(3)})`;
-  }
-
-  // Annular-sector heat fan between the AP's measured sample bearings:
-  // dBm is interpolated in dB space (antenna patterns are smooth in dB)
-  // across ~2deg slices, fading to the noise floor past the edge samples.
-  _heatLobe(ap) {
-    const s = (ap.samples || [])
-      .map((p) => [+p[0], +p[1]])
-      .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
-    if (s.length < 2) return "";
-    const pk = ap.azimuth ?? s[0][0];
-    s.forEach((p) => {
-      while (p[0] - pk > 180) p[0] -= 360;
-      while (p[0] - pk < -180) p[0] += 360;
-    });
-    s.sort((a, b) => a[0] - b[0]);
-    const gap = Math.max(5, (s[s.length - 1][0] - s[0][0]) / (s.length - 1)) * 1.5;
-    const pts = [
-      [s[0][0] - gap, -95],
-      ...s,
-      [s[s.length - 1][0] + gap, -95],
-    ];
-    const Rin = 42, Rout = 138;
-    const hi = Math.max(...s.map((p) => p[1]));
+  // Discrete signal band on the rim: concentric arcs centered on the AP's
+  // bearing - red widest, yellow, then a green core - sized off a fixed
+  // dB-per-degree falloff against the same thresholds as _dbmColor, so a
+  // strong AP earns all three bands while a weak one may only rate red.
+  _signalArc(ap) {
+    if (ap?.azimuth == null || ap.dbm == null) return "";
+    const K = 1.5, RR = 136, pk = ap.azimuth;
     let out = "";
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [a0, d0] = pts[i], [a1, d1] = pts[i + 1];
-      if (a1 <= a0) continue;
-      const span = a1 - a0, n = Math.max(1, Math.ceil(span / 2));
-      for (let k = 0; k < n; k++) {
-        const b0 = a0 + (span * k) / n, b1 = a0 + (span * (k + 1)) / n;
-        const dbm = d0 + ((d1 - d0) * (k + 0.5)) / n;
-        const [x1, y1] = this._pt(CX, CY, Rout, b0);
-        const [x2, y2] = this._pt(CX, CY, Rout, b1);
-        const [x3, y3] = this._pt(CX, CY, Rin, b1);
-        const [x4, y4] = this._pt(CX, CY, Rin, b0);
-        out += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${Rout} ${Rout} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${Rin} ${Rin} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${this._heatColor(dbm, hi)}"/>`;
-      }
+    for (const [th, color] of [[-80, "#c0392b"], [-74, "#f39c12"], [-65, "#00a803"]]) {
+      const half = Math.min(30, Math.max(th === -80 ? 1.2 : 0, (ap.dbm - th) / K));
+      if (half <= 0) continue;
+      const [x0, y0] = this._pt(CX, CY, RR, pk - half);
+      const [x1, y1] = this._pt(CX, CY, RR, pk + half);
+      out += `<path d="M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${RR} ${RR} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)}" fill="none" stroke="${color}" stroke-width="6"/>`;
     }
-    const [lx, ly] = this._pt(CX, CY, R - 4, pk);
-    return `${out}<line class="lobe-peak" x1="${CX}" y1="${CY}" x2="${lx}" y2="${ly}"/>`;
+    return out;
   }
 
   // Short encryption label for the table's Sec column
@@ -328,12 +295,11 @@ class DishAlignerCard extends HTMLElement {
                <text x="${CX + 4}" y="${CY - r + 4}" class="grid-label">${d}</text>`;
     }
 
-    // Heat map: whichever AP is selected (pinned callout) gets its measured
-    // beam drawn as colored arc sectors; in connected map view the connected
-    // AP's map is always on.
+    // Signal band: whichever AP is selected (pinned callout) gets concentric
+    // rim arcs; in connected map view the connected AP's band is always on.
     const pinnedAp = this._pin ? aps.find((a) => a.bssid === this._pin) : null;
-    const heatAp = mapMode ? connAp : pinnedAp;
-    const lobe = heatAp ? this._heatLobe(heatAp) : "";
+    const selAp = mapMode ? connAp : pinnedAp;
+    const lobe = selAp ? this._signalArc(selAp) : "";
 
     // AP markers: bearing = best azimuth, radius = signal strength.
     // Overlapping markers get nudged outward so they stay clickable. In map
@@ -457,8 +423,6 @@ class DishAlignerCard extends HTMLElement {
         .peek { background:transparent; color:var(--secondary-text-color,#888);
                 padding:3px 6px; font-size:12px; }
         tr[data-bssid]:hover td { background:var(--secondary-background-color,rgba(128,128,128,.12)); }
-        .lobe-peak { stroke:var(--primary-color); stroke-width:1;
-                     stroke-dasharray:3 4; opacity:.6; }
         .aplist-head { width:100%; text-align:left; padding:7px 10px; margin-top:8px;
                        border-radius:6px; font-size:13px;
                        background:var(--secondary-background-color,#e8e8e8);
@@ -469,18 +433,6 @@ class DishAlignerCard extends HTMLElement {
       <ha-card style="position:relative">
         <div class="dial-wrap">
         <svg viewBox="0 0 300 300">
-          <defs>
-            <radialGradient id="heatfade" cx="${CX}" cy="${CY}" r="140" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stop-color="#fff" stop-opacity="0"/>
-              <stop offset="0.25" stop-color="#fff" stop-opacity="0"/>
-              <stop offset="0.45" stop-color="#fff"/>
-              <stop offset="0.6" stop-color="#fff"/>
-              <stop offset="1" stop-color="#fff" stop-opacity="0"/>
-            </radialGradient>
-            <mask id="heatmask" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="300">
-              <rect x="0" y="0" width="300" height="300" fill="url(#heatfade)"/>
-            </mask>
-          </defs>
           <circle cx="${CX}" cy="${CY}" r="${R}" class="ring"/>
           ${grid}
           ${ticks}${labels}
@@ -497,7 +449,7 @@ class DishAlignerCard extends HTMLElement {
                   stroke="var(--primary-text-color,#fff)" stroke-width="1.8"/>
             <circle cx="${CX}" cy="${CY - 10.5}" r="2.6" fill="var(--primary-text-color,#fff)"/>
           </g>
-          <g class="lobes" mask="url(#heatmask)">${lobe}</g>
+          <g class="lobes">${lobe}</g>
           ${markers}
           <text class="drag-num" x="${CX}" y="${CY + 32}" opacity="${this._dragging ? 1 : 0}">${this._dragging ? `${Math.round(this._dragAngle)}°` : ""}</text>
         </svg>
@@ -695,8 +647,8 @@ class DishAlignerCard extends HTMLElement {
       this.shadowRoot.querySelector("ha-card"));
   }
 
-  // Inject a heat lobe into the .lobes group without a full re-render -
-  // used while hovering a marker (the pinned/connected lobe is baked in)
+  // Inject a signal band into the .lobes group without a full re-render -
+  // used while hovering a marker (the pinned/connected band is baked in)
   _lobeHover(ap) {
     const lobes = this.shadowRoot?.querySelector(".lobes");
     if (!lobes) return;
@@ -704,7 +656,7 @@ class DishAlignerCard extends HTMLElement {
     if (ap) {
       lobes.insertAdjacentHTML(
         "beforeend",
-        `<g class="hover-lobe">${this._heatLobe(ap)}</g>`
+        `<g class="hover-lobe">${this._signalArc(ap)}</g>`
       );
     }
   }
