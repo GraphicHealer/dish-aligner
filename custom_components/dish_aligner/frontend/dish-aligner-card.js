@@ -143,20 +143,22 @@ class DishAlignerCard extends HTMLElement {
     return 38 + t * 100;
   }
 
-  // Discrete signal band on the rim: concentric arcs centered on the AP's
+  // Discrete signal bands as flat annular sectors centered on the AP's
   // bearing - red widest, yellow, then a green core - sized off a fixed
   // dB-per-degree falloff against the same thresholds as _dbmColor, so a
   // strong AP earns all three bands while a weak one may only rate red.
   _signalArc(ap) {
     if (ap?.azimuth == null || ap.dbm == null) return "";
-    const K = 1.5, RR = 136, pk = ap.azimuth;
+    const K = 1.5, Rin = 42, Rout = 138, pk = ap.azimuth;
     let out = "";
     for (const [th, color] of [[-80, "#c0392b"], [-74, "#f39c12"], [-65, "#00a803"]]) {
       const half = Math.min(30, Math.max(th === -80 ? 1.2 : 0, (ap.dbm - th) / K));
       if (half <= 0) continue;
-      const [x0, y0] = this._pt(CX, CY, RR, pk - half);
-      const [x1, y1] = this._pt(CX, CY, RR, pk + half);
-      out += `<path d="M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${RR} ${RR} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)}" fill="none" stroke="${color}" stroke-width="6"/>`;
+      const [x1, y1] = this._pt(CX, CY, Rout, pk - half);
+      const [x2, y2] = this._pt(CX, CY, Rout, pk + half);
+      const [x3, y3] = this._pt(CX, CY, Rin, pk + half);
+      const [x4, y4] = this._pt(CX, CY, Rin, pk - half);
+      out += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${Rout} ${Rout} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${Rin} ${Rin} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${color}"/>`;
     }
     return out;
   }
