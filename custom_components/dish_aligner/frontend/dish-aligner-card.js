@@ -354,6 +354,7 @@ class DishAlignerCard extends HTMLElement {
         @keyframes halo { 0%,100% { stroke-opacity:.9 } 50% { stroke-opacity:.25 } }
         .status { text-align:center; margin:8px 0 4px; font-size:14px; }
         .status b { text-transform:capitalize; }
+        #az-in { cursor:pointer; border-bottom:1px dashed var(--secondary-text-color,#888); }
         .btns { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:10px 0; }
         button { background:var(--primary-color); color:#fff; border:0; border-radius:6px;
                  padding:6px 12px; font-size:13px; cursor:pointer; }
@@ -427,7 +428,7 @@ class DishAlignerCard extends HTMLElement {
         </div>
         <div class="status">
           <b>${status}</b>${progress ? ` - step ${progress.step}/${progress.total} @ ${Math.round(progress.azimuth)}&deg;` : ""}
-          &middot; ${Math.round(az)}&deg;${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}
+          &middot; <span id="az-in" title="Click to enter a bearing">${Math.round(az)}&deg;</span>${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}
         </div>
         ${this._notice ? `<div class="banner ok"><span>${this._notice}</span><button class="x" data-dismiss="notice" title="Dismiss">&times;</button></div>` : ""}
         ${errShown ? `<div class="banner err"><span>&#9888;</span><span>${err}</span><button class="x" data-dismiss="err" title="Dismiss">&times;</button></div>` : ""}
@@ -470,6 +471,18 @@ class DishAlignerCard extends HTMLElement {
     this.shadowRoot.getElementById("survey")?.addEventListener("click", () => this._svc("survey"));
     this.shadowRoot.getElementById("home")?.addEventListener("click", () => this._svc("home"));
     this.shadowRoot.getElementById("abort")?.addEventListener("click", () => this._svc("abort"));
+    this.shadowRoot.getElementById("az-in")?.addEventListener("click", () => {
+      const v = window.prompt("Aim to azimuth (0-359\u00b0):",
+        String(Math.round(target ?? az)));
+      if (v === null) return;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 359) {
+        this._callErr = "Azimuth must be a number from 0 to 359";
+        this._render();
+        return;
+      }
+      this._svc("aim", { azimuth: Math.round(n) });
+    });
     this.shadowRoot.querySelectorAll("g.ap").forEach((g) => {
       const ap = aps.find((a) => a.bssid === g.dataset.bssid);
       g.addEventListener("pointerdown", (e) => e.stopPropagation());
