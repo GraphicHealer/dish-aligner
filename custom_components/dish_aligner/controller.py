@@ -295,17 +295,19 @@ class DishController:
             if center is None:
                 raise HomeAssistantError("Current angle unavailable")
             stops = [center + d for d in _spread(-sweep / 2, sweep / 2, step)]
-            best_az, best_dbm = None, None
+            samples: list[tuple[float, float]] = []
             for i, az in enumerate(stops):
                 self.progress = {"step": i + 1, "total": len(stops), "azimuth": az % 360}
                 self._notify()
                 await self._move(az)
                 await asyncio.sleep(dwell)
                 dbm = await self._signal_dbm()
-                if dbm is not None and (best_dbm is None or dbm > best_dbm):
-                    best_az, best_dbm = az % 360, dbm
-            if best_az is None:
+                if dbm is not None:
+                    samples.append((az, dbm))
+            if not samples:
                 raise HomeAssistantError("No signal seen anywhere in the sweep")
+            best_az = _interp_bearing(samples)
+            best_dbm = max(s[1] for s in samples)
             await self._move(best_az)
             await asyncio.sleep(dwell)
             self.alignment = {
@@ -348,16 +350,27 @@ class DishController:
                     bssid = (ap.get("bssid") or ap.get("ssid") or "").lower()
                     if not bssid:
                         continue
+                    entry = found.setdefault(bssid, {
+                        "ssid": ap.get("ssid") or "",
+                        "bssid": bssid,
+                        "channel": ap.get("channel"),
+                        "crypto": ap.get("encryption") or ap.get("crypto") or {},
+                        "dbm": None,
+                        "azimuth": None,
+                        "_samples": [],
+                    })
+                    if not entry["ssid"] and ap.get("ssid"):
+                        entry["ssid"] = ap["ssid"]
                     sig = ap.get("signal")
-                    if bssid not in found or (sig is not None and sig > found[bssid]["dbm"]):
-                        found[bssid] = {
-                            "ssid": ap.get("ssid") or "",
-                            "bssid": bssid,
-                            "channel": ap.get("channel"),
-                            "crypto": ap.get("encryption") or ap.get("crypto") or {},
-                            "dbm": sig,
-                            "azimuth": az,
-                        }
+                    if sig is not None:
+                        entry["_samples"].append((az, sig))
+                        if entry["dbm"] is None or sig > entry["dbm"]:
+                            entry["dbm"] = sig
+                            entry["azimuth"] = az
+            for entry in found.values():
+                peak = _interp_bearing(entry.pop("_samples"))
+                if peak is not None:
+                    entry["azimuth"] = round(peak, 1)
             self.survey_results = sorted(
                 found.values(), key=lambda a: (a["dbm"] is not None, a["dbm"]), reverse=True
             )
@@ -501,7 +514,8 @@ class DishController:
         step = int(self._opt(CONF_SURVEY_STEP_DEGREES, DEFAULT_SURVEY_STEP_DEGREES))
         cur = self.azimuth or 0
         stops = [int((cur + k * step)) % 360 for k in range(1, int(360 / step))]
-        best, best_sig = None, -999
+        hits_by_bssid: dict[str, dict] = {}
+        samples: dict[str, list] = {}
         for i, az in enumerate(stops):
             self.progress = {"step": i + 1, "total": len(stops), "azimuth": az}
             self._notify()
@@ -512,11 +526,19 @@ class DishController:
                 _LOGGER.warning("probe at %d deg failed: %s", az, err)
                 continue
             for h in hits:
-                sig = h.get("signal") or -999
-                if sig > best_sig:
-                    best_sig = sig
-                    best = self._merge_survey_hit(ssid, h, az)
-        return best
+                b = (h.get("bssid") or "").lower()
+                sig = h.get("signal")
+                if not b or sig is None:
+                    continue
+                hits_by_bssid[b] = h
+                samples.setdefault(b, []).append((az, sig))
+        merged = {}
+        for b, samps in samples.items():
+            merged[b] = self._merge_survey_hit(ssid, hits_by_bssid[b], _interp_bearing(samps))
+        if not merged:
+            return None
+        best_b = max(merged, key=lambda b: merged[b]["dbm"] or -999)
+        return merged[best_b]
 
     def _merge_survey_hit(self, ssid: str, hit: dict, azimuth) -> dict:
         """Fold a probe result into survey_results (keyed by BSSID)."""
@@ -546,6 +568,47 @@ class DishController:
         """Cancel whatever is running."""
         if self._task is not None and not self._task.done():
             self._task.cancel()
+
+
+def _interp_bearing(samples: list[tuple[float, float]]) -> float | None:
+    """Estimate an AP's true bearing from (azimuth, dBm) sweep samples.
+
+    Every AP is audible across several stops inside the beamwidth, but keeping
+    only the loudest stop quantizes all of them to the sweep grid - markers
+    clump on the stop bearings. Antenna gain is roughly Gaussian in dB, so a
+    parabola through the strongest sample and its azimuth neighbors recovers
+    the sub-step bearing of the true peak.
+    """
+    pts = sorted(p for p in samples if p[1] is not None)
+    if not pts:
+        return None
+    if len(pts) < 3:
+        return max(pts, key=lambda p: p[1])[0] % 360
+    imax = max(range(len(pts)), key=lambda i: pts[i][1])
+    x0, y0 = pts[imax]
+
+    def near(p):
+        # unwrap a neighbor's azimuth so it sits adjacent to the peak
+        x = p[0]
+        while x - x0 > 180:
+            x -= 360
+        while x - x0 < -180:
+            x += 360
+        return x, p[1]
+
+    xm, ym = near(pts[(imax - 1) % len(pts)])
+    xp, yp = near(pts[(imax + 1) % len(pts)])
+    if not (xm < x0 < xp):
+        return x0 % 360
+    # parabola through (xm,ym),(x0,y0),(xp,yp); vertex is the bearing estimate
+    a = ((yp - y0) / (xp - x0) - (y0 - ym) / (x0 - xm)) / (xp - xm)
+    if a >= 0:  # not concave - noise; no meaningful peak
+        return x0 % 360
+    b = (y0 - ym) / (x0 - xm) - a * (xm + x0)
+    peak = -b / (2 * a)
+    if not xm <= peak <= xp:
+        return x0 % 360
+    return peak % 360
 
 
 def _spread(lo: float, hi: float, step: float) -> list[float]:
