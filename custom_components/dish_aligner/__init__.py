@@ -78,12 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Keep the associated SSID/BSSID fresh for the card's connected-AP marker
     hass.async_create_task(controller.refresh_assoc())
+    async def _assoc_tick(_now):
+        await controller.refresh_assoc()
+
     entry.async_on_unload(
-        async_track_time_interval(
-            hass,
-            lambda _now: hass.async_create_task(controller.refresh_assoc()),
-            ASSOC_REFRESH,
-        )
+        async_track_time_interval(hass, _assoc_tick, ASSOC_REFRESH)
     )
 
     # Serve + auto-load the bundled card
