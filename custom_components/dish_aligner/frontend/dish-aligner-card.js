@@ -180,7 +180,8 @@ class DishAlignerCard extends HTMLElement {
     const status = this._st(c.status_entity)?.state ?? "unknown";
     const progress = this._st(c.status_entity)?.attributes?.progress;
     const dbm = this._num(c.signal_entity);
-    const aps = this._st(c.survey_entity)?.attributes?.access_points ?? [];
+    const aps = (this._st(c.survey_entity)?.attributes?.access_points ?? [])
+      .filter((ap) => (ap.ssid || "").trim());
     const connAttrs = this._st(c.status_entity)?.attributes ?? {};
     const connBssid = (connAttrs.connected_bssid || "").toLowerCase();
     const connSsid = connAttrs.connected_ssid;
