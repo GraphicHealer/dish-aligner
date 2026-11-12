@@ -80,19 +80,30 @@ class UbusClient:
             raise UbusError("Ubus login returned no session token")
         self._token = token
 
-    async def call(self, obj: str, method: str, params: dict | None = None) -> Any:
-        """Call a ubus object method, re-logging-in once on expiry."""
+    async def call(self, obj: str, method: str, params: dict | None = None,
+                   needs_session: bool = False) -> Any:
+        """Call a ubus object method, re-logging-in once on expiry.
+
+        needs_session injects the live token into the params - rpcd's
+        file.exec requires it echoed inside the call as a CSRF check, and
+        it must be refreshed on the re-login retry path too.
+        """
         async with self._lock:
             if self._token is None:
                 await self._login()
+            p = params or {}
+            if needs_session:
+                p = {**p, "session": self._token}
             try:
-                return await self._post([self._token, obj, method, params or {}])
+                return await self._post([self._token, obj, method, p])
             except UbusError as err:
                 if "code 6" in str(err) or "-32002" in str(err):
                     _LOGGER.debug("Ubus session expired/denied, re-login")
                     self._token = None
                     await self._login()
-                    return await self._post([self._token, obj, method, params or {}])
+                    if needs_session:
+                        p = {**p, "session": self._token}
+                    return await self._post([self._token, obj, method, p])
                 raise
 
     # -- convenience wrappers ------------------------------------------------
@@ -125,13 +136,20 @@ class UbusClient:
         data = await self.call("iwinfo", "devices", {})
         return data.get("devices", []) or []
 
+    async def _file_exec(self, command: str, params: list[str]) -> dict:
+        """file.exec on OpenWrt >=24ish: `command` is the program path and the
+        session id must be echoed inside the params (rpcd CSRF check)."""
+        return await self.call(
+            "file", "exec",
+            {"command": command, "params": params},
+            needs_session=True,
+        )
+
     async def _apk_installed(self, pkg: str) -> bool | None:
         """`apk info -e <pkg>` exit status - None if apk itself can't run."""
         for path in APK_PATHS:
             try:
-                data = await self.call(
-                    "file", "exec", {"path": path, "params": ["info", "-e", pkg]}
-                )
+                data = await self._file_exec(path, ["info", "-e", pkg])
             except UbusError:
                 continue
             try:
@@ -157,7 +175,7 @@ class UbusClient:
         installed = await self._apk_installed("iw")
         if installed is None:
             try:
-                await self._exec(["version"])
+                await self._exec(["--version"])
                 installed = True
             except UbusError:
                 installed = False
@@ -183,9 +201,7 @@ class UbusClient:
         last: Exception | None = None
         for path in IW_PATHS:
             try:
-                return await self.call(
-                    "file", "exec", {"path": path, "params": params}
-                )
+                return await self._file_exec(path, params)
             except UbusError as err:
                 last = err
         raise last or UbusError("iw not found on the radio")
