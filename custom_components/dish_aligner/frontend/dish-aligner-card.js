@@ -235,8 +235,9 @@ class DishAlignerCard extends HTMLElement {
         this._setNotice(`Connected to ${connSsid}`);
       } else if (this._prevStatus === "aligning" && connAttrs.last_align) {
         const la = connAttrs.last_align;
+        const v = la.verified?.mbps != null ? la.verified : la.verified_ext;
         this._setNotice(`Aligned at ${Math.round(la.azimuth)}°` +
-          (la.verified?.mbps != null ? ` - ${la.verified.mbps} Mbps` : ""));
+          (v?.mbps != null ? ` - ${v.mbps} ${v.unit || "Mbps"}` : ""));
       }
     }
     this._prevBusy = busy;
@@ -436,7 +437,7 @@ class DishAlignerCard extends HTMLElement {
         </div>
         <div class="status">
           <b>${status}</b>${progress ? ` - step ${progress.step}/${progress.total} @ ${Math.round(progress.azimuth)}&deg;` : ""}
-          &middot; <span id="az-in" title="Click to enter a bearing">${Math.round(az)}&deg;</span>${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}${connAttrs.last_align?.verified?.mbps != null ? ` &middot; &darr;${connAttrs.last_align.verified.mbps} Mbps` : ""}
+          &middot; <span id="az-in" title="Click to enter a bearing">${Math.round(az)}&deg;</span>${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}${(() => { const v = connAttrs.last_align?.verified?.mbps != null ? connAttrs.last_align.verified : connAttrs.last_align?.verified_ext; return v?.mbps != null ? ` &middot; &darr;${v.mbps} ${v.unit || "Mbps"}` : ""; })()}
         </div>
         ${this._notice ? `<div class="banner ok"><span>${this._notice}</span><button class="x" data-dismiss="notice" title="Dismiss">&times;</button></div>` : ""}
         ${errShown ? `<div class="banner err"><span>&#9888;</span><span>${err}</span><button class="x" data-dismiss="err" title="Dismiss">&times;</button></div>` : ""}

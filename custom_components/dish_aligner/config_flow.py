@@ -36,6 +36,8 @@ from .const import (
     CONF_SURVEY_STEP_DEGREES,
     CONF_SWEEP_DEGREES,
     CONF_TARGET_ENTITY,
+    CONF_SPEEDTEST_SENSOR,
+    CONF_VERIFY_SERVICE,
     CONF_VERIFY_SPEEDTEST,
     CONF_WIFI_INTERFACE,
     DEFAULT_AUTO_HOME,
@@ -337,8 +339,15 @@ class DishAlignerOptionsFlow(config_entries.OptionsFlow):
                             CONF_BUILTIN_SPEEDTEST, DEFAULT_BUILTIN_SPEEDTEST
                         ),
                     ): bool,
+                    vol.Optional(
+                        CONF_VERIFY_SERVICE,
+                        default=opts.get(CONF_VERIFY_SERVICE, ""),
+                    ): str,
                     vol.Optional(CONF_VERIFY_SPEEDTEST): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain="button")
+                        selector.EntitySelectorConfig(domain=["button", "script"])
+                    ),
+                    vol.Optional(CONF_SPEEDTEST_SENSOR): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="sensor")
                     ),
                 }
             ),

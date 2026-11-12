@@ -30,10 +30,12 @@ from .const import (
     CONF_QUALITY_ENTITY,
     CONF_RADIO_DEVICE,
     CONF_SIGNAL_ENTITY,
+    CONF_SPEEDTEST_SENSOR,
     CONF_STEP_DEGREES,
     CONF_SURVEY_STEP_DEGREES,
     CONF_SWEEP_DEGREES,
     CONF_TARGET_ENTITY,
+    CONF_VERIFY_SERVICE,
     CONF_VERIFY_SPEEDTEST,
     CONF_WIFI_INTERFACE,
     DEFAULT_AUTO_HOME,
@@ -46,6 +48,7 @@ from .const import (
     OPENWRT_DOMAIN,
     SIGNAL_SAMPLES,
     SPEEDTEST_DURATION,
+    SPEEDTEST_RESULT_TIMEOUT,
     SPEEDTEST_URL,
 )
 from .ubus import UbusClient, UbusError
@@ -347,12 +350,49 @@ class DishController:
                     self.alignment["verified"] = {"error": str(err)}
                     _LOGGER.warning("Built-in speed test failed: %s", err)
                 self._notify()
-            # External verification: press whatever speedtest entity the
-            # user configured (Speedtest.net, Cloudflare add-on, etc.)
-            test = self._opt(CONF_VERIFY_SPEEDTEST, None)
-            if test:
-                await self._press(test)
-            self._notify()
+            # External verification: call a service (speedtestdotnet.speedtest
+            # & co.) or press/run an entity, then pull the result back from
+            # the configured download-speed sensor
+            svc = (self._opt(CONF_VERIFY_SERVICE, "") or "").strip()
+            trigger = self._opt(CONF_VERIFY_SPEEDTEST, None)
+            result_sensor = self._opt(CONF_SPEEDTEST_SENSOR, None)
+            if svc or trigger:
+                prev_updated = None
+                if result_sensor:
+                    st = self._state(result_sensor)
+                    prev_updated = st.last_updated if st else None
+                try:
+                    if svc:
+                        domain, _, method = svc.partition(".")
+                        if not domain or not method:
+                            raise HomeAssistantError(
+                                f"verify_service '{svc}' isn't 'domain.service'"
+                            )
+                        # Speedtest services can take a minute - don't block,
+                        # the result sensor tells us when it's done
+                        await self.hass.services.async_call(
+                            domain, method, {}, blocking=False
+                        )
+                    else:
+                        domain = trigger.split(".", 1)[0]
+                        action = "press" if domain == "button" else "turn_on"
+                        await self.hass.services.async_call(
+                            domain, action,
+                            {"entity_id": trigger},
+                            blocking=result_sensor is None,
+                        )
+                except Exception as err:  # noqa: BLE001
+                    self.alignment["verified_ext"] = {"error": str(err)}
+                    _LOGGER.warning("External speed test trigger failed: %s", err)
+                    self._notify()
+                else:
+                    if result_sensor:
+                        self.alignment["verified_ext"] = (
+                            await self._await_speedtest_result(
+                                result_sensor, prev_updated
+                            )
+                        )
+                    self._notify()
 
         self._start(STATUS_ALIGNING, run())
 
@@ -506,6 +546,32 @@ class DishController:
             )
 
         self._start(STATUS_JOINING, run())
+
+    async def _await_speedtest_result(
+        self, entity_id: str, prev_updated, timeout: float = SPEEDTEST_RESULT_TIMEOUT
+    ) -> dict:
+        """Poll a speedtest result sensor until it reports a new value."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            st = self._state(entity_id)
+            if (
+                st is not None
+                and st.last_updated != prev_updated
+                and st.state not in ("unavailable", "unknown", "none", "")
+            ):
+                try:
+                    val = float(st.state)
+                except (TypeError, ValueError):
+                    pass
+                else:
+                    return {
+                        "mbps": round(val, 1),
+                        "unit": st.attributes.get("unit_of_measurement") or "Mbps",
+                        "sensor": entity_id,
+                        "source": "external",
+                    }
+            await asyncio.sleep(2)
+        return {"error": f"timed out waiting for {entity_id} to update"}
 
     async def _diagnose_join_failure(self, ap: dict | None) -> str:
         """Rescan after a failed association to classify the reason."""

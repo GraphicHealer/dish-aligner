@@ -37,7 +37,9 @@ CONF_PENDING_RELOADS = "pending_reloads"
 # Options
 CONF_WIFI_INTERFACE = "wifi_interface"
 CONF_AUTO_HOME = "auto_home"             # re-home before each survey
-CONF_VERIFY_SPEEDTEST = "verify_speedtest"  # entity run after auto-align
+CONF_VERIFY_SPEEDTEST = "verify_speedtest"  # button/script entity run after auto-align
+CONF_VERIFY_SERVICE = "verify_service"      # domain.service called after auto-align
+CONF_SPEEDTEST_SENSOR = "speedtest_sensor"  # sensor read for the test result
 CONF_SWEEP_DEGREES = "sweep_degrees"
 CONF_STEP_DEGREES = "step_degrees"
 CONF_DWELL_SECONDS = "dwell_seconds"
@@ -54,6 +56,7 @@ DEFAULT_AUTO_HOME = True
 DEFAULT_BUILTIN_SPEEDTEST = False        # off by default - metered uplinks exist
 SPEEDTEST_URL = "https://speed.cloudflare.com/__down?bytes=104857600"  # 100MB cap
 SPEEDTEST_DURATION = 12                  # s of download per verification
+SPEEDTEST_RESULT_TIMEOUT = 150           # s to wait for an external test's result
 SIGNAL_SAMPLES = 3
 
 # Entity signatures we auto-resolve on each device:
