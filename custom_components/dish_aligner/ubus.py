@@ -9,6 +9,7 @@ iwinfo scan/info, uci get/set/commit, network.interface up/down, and `iw`
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -148,6 +149,50 @@ class UbusClient:
             needs_session=True,
             timeout=timeout,
         )
+
+    async def speedtest(self, url: str, duration: float = 12.0) -> dict:
+        """Best available on-radio test: librespeed-cli if installed (full
+        ping/jitter/down/up via its JSON output), else the stock
+        uclient-fetch fallback that only reports download Mbps."""
+        path = ""
+        try:
+            data = await self._file_exec(
+                "/bin/sh", ["-c", "command -v librespeed-cli"]
+            )
+            path = (data.get("stdout") or "").strip().splitlines()[0].strip()
+        except (UbusError, IndexError):
+            pass
+        if path:
+            try:
+                return await self._librespeed(path)
+            except UbusError as err:
+                _LOGGER.warning(
+                    "librespeed-cli failed (%s); using fetch fallback", err
+                )
+        return await self.speedtest_down(url, duration)
+
+    async def _librespeed(self, path: str) -> dict:
+        """Run `librespeed-cli --json` and normalise the result."""
+        data = await self._file_exec(
+            path, ["--json"], timeout=aiohttp.ClientTimeout(total=150)
+        )
+        try:
+            results = json.loads(data.get("stdout") or "")
+        except ValueError as err:
+            raise UbusError(f"librespeed-cli returned no JSON: {err}") from err
+        if isinstance(results, dict):
+            results = [results]
+        if not results:
+            raise UbusError("librespeed-cli ran but returned no result")
+        best = max(results, key=lambda r: r.get("download") or 0)
+        return {
+            "mbps": round(best.get("download") or 0, 1),
+            "upload_mbps": round(best.get("upload") or 0, 1),
+            "ping_ms": best.get("ping"),
+            "jitter_ms": best.get("jitter"),
+            "server": best.get("name") or best.get("server"),
+            "source": "librespeed",
+        }
 
     async def speedtest_down(self, url: str, duration: float = 12.0) -> dict:
         """Downlink test run *on the radio*: pull `url` for up to `duration`

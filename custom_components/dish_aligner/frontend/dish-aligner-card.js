@@ -95,6 +95,11 @@ class DishAlignerCard extends HTMLElement {
     this._render();
   }
 
+  _fmtSpeed(v) {
+    if (v?.mbps == null) return "";
+    return `↓${v.mbps}${v.upload_mbps != null ? ` ↑${v.upload_mbps}` : ""} ${v.unit || "Mbps"}`;
+  }
+
   _setNotice(msg) {
     this._notice = msg;
     clearTimeout(this._noticeTimer);
@@ -237,7 +242,7 @@ class DishAlignerCard extends HTMLElement {
         const la = connAttrs.last_align;
         const v = la.verified?.mbps != null ? la.verified : la.verified_ext;
         this._setNotice(`Aligned at ${Math.round(la.azimuth)}°` +
-          (v?.mbps != null ? ` - ${v.mbps} ${v.unit || "Mbps"}` : ""));
+          (v?.mbps != null ? ` - ${this._fmtSpeed(v)}` : ""));
       }
     }
     this._prevBusy = busy;
@@ -437,7 +442,7 @@ class DishAlignerCard extends HTMLElement {
         </div>
         <div class="status">
           <b>${status}</b>${progress ? ` - step ${progress.step}/${progress.total} @ ${Math.round(progress.azimuth)}&deg;` : ""}
-          &middot; <span id="az-in" title="Click to enter a bearing">${Math.round(az)}&deg;</span>${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}${(() => { const v = connAttrs.last_align?.verified?.mbps != null ? connAttrs.last_align.verified : connAttrs.last_align?.verified_ext; return v?.mbps != null ? ` &middot; &darr;${v.mbps} ${v.unit || "Mbps"}` : ""; })()}
+          &middot; <span id="az-in" title="Click to enter a bearing">${Math.round(az)}&deg;</span>${connSsid ? ` &middot; ${connSsid}` : ""}${dbm != null ? ` &middot; ${dbm} dBm` : ""}${(() => { const v = connAttrs.last_align?.verified?.mbps != null ? connAttrs.last_align.verified : connAttrs.last_align?.verified_ext; return v?.mbps != null ? ` &middot; ${this._fmtSpeed(v)}` : ""; })()}
         </div>
         ${this._notice ? `<div class="banner ok"><span>${this._notice}</span><button class="x" data-dismiss="notice" title="Dismiss">&times;</button></div>` : ""}
         ${errShown ? `<div class="banner err"><span>&#9888;</span><span>${err}</span><button class="x" data-dismiss="err" title="Dismiss">&times;</button></div>` : ""}

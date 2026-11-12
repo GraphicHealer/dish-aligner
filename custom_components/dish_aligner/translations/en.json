@@ -48,7 +48,7 @@
           "survey_step_degrees": "Survey step size",
           "auto_home": "Re-home before every survey",
           "excluded_aps": "APs to hide (comma-separated SSIDs or BSSIDs)",
-          "builtin_speedtest": "Download test on the radio after auto-align (~15s, measures the dish's own uplink)",
+          "builtin_speedtest": "Test on the radio after auto-align (uses librespeed-cli if installed, else a ~15s download)",
           "verify_service": "Speed-test service to call (e.g. speedtestdotnet.speedtest) - overrides the trigger entity",
           "verify_speedtest": "Speed-test trigger entity (button or script)",
           "speedtest_sensor": "Download-speed sensor to read the test result from (e.g. sensor.speedtest_download)"

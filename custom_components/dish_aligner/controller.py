@@ -343,7 +343,7 @@ class DishController:
             # measuring the actual dish uplink (not HA's path)
             if self._opt(CONF_BUILTIN_SPEEDTEST, DEFAULT_BUILTIN_SPEEDTEST):
                 try:
-                    self.alignment["verified"] = await self.ubus.speedtest_down(
+                    self.alignment["verified"] = await self.ubus.speedtest(
                         SPEEDTEST_URL, SPEEDTEST_DURATION
                     )
                 except UbusError as err:
