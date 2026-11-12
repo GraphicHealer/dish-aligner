@@ -471,8 +471,10 @@ class DishAlignerCard extends HTMLElement {
         <svg viewBox="0 0 300 300">
           <defs>
             <radialGradient id="heatfade" cx="${CX}" cy="${CY}" r="140" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stop-color="#fff"/>
-              <stop offset="0.55" stop-color="#fff"/>
+              <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+              <stop offset="0.25" stop-color="#fff" stop-opacity="0"/>
+              <stop offset="0.45" stop-color="#fff"/>
+              <stop offset="0.6" stop-color="#fff"/>
               <stop offset="1" stop-color="#fff" stop-opacity="0"/>
             </radialGradient>
             <mask id="heatmask" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="300">
