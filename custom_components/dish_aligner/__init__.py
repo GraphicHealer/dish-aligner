@@ -81,8 +81,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         async_track_time_interval(
             hass,
-            ASSOC_REFRESH,
             lambda _now: hass.async_create_task(controller.refresh_assoc()),
+            ASSOC_REFRESH,
         )
     )
 
