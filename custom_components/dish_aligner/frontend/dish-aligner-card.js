@@ -405,15 +405,85 @@ class DishAlignerCard extends HTMLElement {
 
   getCardSize() { return 8; }
   static getConfigElement() { return document.createElement("dish-aligner-card-editor"); }
-  static getStubConfig() { return {}; }
+
+  // Auto-guess entities by name so a fresh card mostly self-configures.
+  static getStubConfig(hass) {
+    const pick = (domain, needle) =>
+      Object.keys(hass?.states ?? {}).find(
+        (e) => e.startsWith(domain + ".") && e.includes(needle)
+      );
+    const cfg = {
+      angle_entity: pick("sensor", "current_angle"),
+      target_entity: pick("number", "azimuth_target"),
+      status_entity: pick("sensor", "aligner_status"),
+      survey_entity: pick("sensor", "aligner_survey"),
+      signal_entity: pick("sensor", "signal"),
+      beamwidth: 50,
+    };
+    return Object.fromEntries(Object.entries(cfg).filter(([, v]) => v !== undefined));
+  }
 }
 
+const EDITOR_FIELDS = [
+  { key: "angle_entity", label: "Azimuth sensor", domains: ["sensor"] },
+  { key: "target_entity", label: "Aim target (number)", domains: ["number"] },
+  { key: "status_entity", label: "Dish Aligner status", domains: ["sensor"] },
+  { key: "survey_entity", label: "Dish Aligner survey", domains: ["sensor"] },
+  { key: "signal_entity", label: "Signal strength (optional)", domains: ["sensor"] },
+];
+
 class DishAlignerCardEditor extends HTMLElement {
-  setConfig(config) { this._config = config; }
-  set hass(hass) { this._hass = hass; }
-  connectedCallback() {
-    this.innerHTML = `<div style="padding:8px">Configure entity ids in YAML for now:
-      angle_entity, target_entity, status_entity, survey_entity, signal_entity, beamwidth</div>`;
+  setConfig(config) {
+    this._config = { ...config };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this.shadowRoot) {
+      this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((el) => {
+        el.hass = hass;
+      });
+    }
+  }
+
+  _render() {
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this.shadowRoot.innerHTML = `
+      <style>
+        .row { padding: 8px 0; display: block; }
+        .label { display: block; font-size: 12px; color: var(--secondary-text-color); padding: 12px 0 4px; }
+        input[type=number] { width: 80px; padding: 6px; font: inherit;
+          color: var(--primary-text-color); background: var(--secondary-background-color);
+          border: 1px solid var(--divider-color); border-radius: 4px; }
+      </style>
+      ${EDITOR_FIELDS.map(
+        (f) => `<ha-entity-picker class="row" data-key="${f.key}"
+          label="${f.label}" .includeDomains="${f.domains}" allow-custom-entity></ha-entity-picker>`
+      ).join("")}
+      <div class="row">
+        <span class="label">Beamwidth (deg)</span>
+        <input type="number" min="5" max="180" step="1" data-key="beamwidth"
+          value="${this._config?.beamwidth ?? 50}">
+      </div>`;
+    this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((el) => {
+      el.hass = this._hass;
+      el.value = this._config?.[el.dataset.key] ?? "";
+      el.addEventListener("value-changed", (ev) => this._changed(el.dataset.key, ev.detail.value));
+    });
+    this.shadowRoot.querySelector("input").addEventListener("change", (ev) =>
+      this._changed("beamwidth", Number(ev.target.value) || 50)
+    );
+  }
+
+  _changed(key, value) {
+    const cfg = { ...this._config };
+    if (value === undefined || value === "") delete cfg[key];
+    else cfg[key] = value;
+    this._config = cfg;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: cfg }, bubbles: true, composed: true,
+    }));
   }
 }
 
